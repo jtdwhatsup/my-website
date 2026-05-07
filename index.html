@@ -1,7 +1,77 @@
 <!DOCTYPE html>
 <html>
+  <head>
+    <title>Exit Interview</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin-top: 50px;
+      }
+      #video-area video {
+        width: 400px;
+        border-radius: 10px;
+        margin-top: 20px;
+      }
+      button {
+        padding: 12px 20px;
+        font-size: 18px;
+        border: none;
+        background-color: #4CAF50;
+        color: white;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+    </style>
+  </head>
+
   <body>
-    <h1>Hello from my website!</h1>
-    <p>This is my first webpage.</p>
+
+    <h1>Start Your Exit Interview</h1>
+
+    <!-- The button the user clicks -->
+    <button onclick="startInterview()">Start Interview</button>
+
+    <!-- Where the camera video will appear -->
+    <div id="video-area"></div>
+
+    <!-- Load LiveKit client library -->
+    <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
+
+    <script>
+      async function startInterview() {
+        // 1. Create a LiveKit room object
+        const room = new LivekitClient.Room();
+
+        // 2. Replace this with your REAL LiveKit token
+        const token = "YOUR_TOKEN_HERE";
+
+        // 3. Replace this with your REAL LiveKit Cloud URL
+        const livekitUrl = "wss://YOUR-LIVEKIT-URL";
+
+        // 4. Connect to the room
+        await room.connect(livekitUrl, token);
+
+        // 5. Turn on your camera
+        const localTrack = await LivekitClient.createLocalVideoTrack();
+
+        // 6. Show your camera on the webpage
+        const videoElement = document.createElement("video");
+        videoElement.autoplay = true;
+        videoElement.muted = true;
+        videoElement.srcObject = new MediaStream([localTrack.mediaStreamTrack]);
+        document.getElementById("video-area").appendChild(videoElement);
+
+        // 7. Publish your camera to the room
+        room.localParticipant.publishTrack(localTrack);
+
+        // 8. Your agent will now join the same room and begin the interview
+        console.log("Interview started!");
+      }
+    </script>
+
   </body>
 </html>
