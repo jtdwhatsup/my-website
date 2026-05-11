@@ -6,7 +6,7 @@
       body {
         font-family: Arial, sans-serif;
         text-align: center;
-        margin-top: 50px;
+        margin-top: 40px;
       }
       #video-area video {
         width: 400px;
@@ -25,53 +25,73 @@
       button:hover {
         background-color: #45a049;
       }
+      #status {
+        margin-top: 15px;
+        font-weight: bold;
+      }
     </style>
   </head>
 
   <body>
-
     <h1>Start Your Exit Interview</h1>
-
-    <!-- The button the user clicks -->
     <button onclick="startInterview()">Start Interview</button>
-
-    <!-- Where the camera video will appear -->
     <div id="video-area"></div>
+    <div id="status"></div>
 
-    <!-- Load LiveKit client library -->
+    <!-- Load LiveKit client and face detection libraries -->
     <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
 
     <script>
       async function startInterview() {
-        // 1. Create a LiveKit room object
+        document.getElementById("status").innerText = "Connecting to LiveKit...";
+
+        // Create a LiveKit room
         const room = new LivekitClient.Room();
 
-        // 2. Replace this with your REAL LiveKit token
-        const token = "YOUR_TOKEN_HERE";
+        // Replace these placeholders
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg0NzIxNDcsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODQ3MTI0Nywic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.UP3cqRbuvX-yf-h1YjOFnDnP1xK1klOAmg0Qh-3LdQc";
+        const livekitUrl = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
 
-        // 3. Replace this with your REAL LiveKit Cloud URL
-        const livekitUrl = "wss://YOUR-LIVEKIT-URL";
-
-        // 4. Connect to the room
         await room.connect(livekitUrl, token);
+        document.getElementById("status").innerText = "Connected! Starting camera and mic...";
 
-        // 5. Turn on your camera
-        const localTrack = await LivekitClient.createLocalVideoTrack();
+        // Get camera + mic
+        const localTracks = await LivekitClient.createLocalTracks({ audio: true, video: true });
+        const videoTrack = localTracks.find(t => t.kind === "video");
+        const audioTrack = localTracks.find(t => t.kind === "audio");
 
-        // 6. Show your camera on the webpage
+        // Show video preview
         const videoElement = document.createElement("video");
         videoElement.autoplay = true;
         videoElement.muted = true;
-        videoElement.srcObject = new MediaStream([localTrack.mediaStreamTrack]);
+        videoElement.srcObject = new MediaStream([videoTrack.mediaStreamTrack]);
         document.getElementById("video-area").appendChild(videoElement);
 
-        // 7. Publish your camera to the room
-        room.localParticipant.publishTrack(localTrack);
+        // Publish tracks
+        room.localParticipant.publishTrack(videoTrack);
+        room.localParticipant.publishTrack(audioTrack);
 
-        // 8. Your agent will now join the same room and begin the interview
-        console.log("Interview started!");
+        // Load face detection model
+        const model = await blazeface.load();
+        document.getElementById("status").innerText = "Face detection active.";
+
+        // Run detection loop
+        async function detectFaces() {
+          const predictions = await model.estimateFaces(videoElement, false);
+          if (predictions.length > 0) {
+            document.getElementById("status").innerText = `Faces detected: ${predictions.length}`;
+          } else {
+            document.getElementById("status").innerText = "No face detected.";
+          }
+          requestAnimationFrame(detectFaces);
+        }
+        detectFaces();
+
+        console.log("Interview started with mic, camera, and face detection!");
       }
     </script>
-
   </body>
 </html>
+
