@@ -1,4 +1,8 @@
-import { connect } from "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.min.js";
+import {
+  connect,
+  RoomEvent,
+  createLocalVideoTrack
+} from "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.min.js";
 
 let room = null;
 let emotionInterval = null;
@@ -9,78 +13,76 @@ const startBtn = document.getElementById("start");
 const endBtn = document.getElementById("end");
 const exportBtn = document.getElementById("export");
 const emotionSpan = document.getElementById("emotion");
-const video = document.getElementById("video");
+const localVideo = document.getElementById("localVideo");
+const agentVideo = document.getElementById("agentVideo");
 
-// Simple mock emotion detection using webcam + random labels
-async function startEmotionDetection() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    video.srcObject = stream;
+// Connect to LiveKit
+async function connectToRoom() {
+  const token = await getToken();
 
-    const emotions = ["Calm", "Stressed", "Engaged", "Bored", "Neutral"];
+  room = await connect(
+    "wss://exit-interview-agent-1lo01a7d.livekit.cloud",
+    token
+  );
 
-    emotionInterval = setInterval(() => {
-      if (!interviewActive) return;
-      const emotion = emotions[Math.floor(Math.random() * emotions.length)];
-      const timestamp = new Date().toLocaleTimeString();
-      emotionSpan.textContent = `${emotion} (${timestamp})`;
-      emotionHistory.push({ emotion, timestamp });
-    }, 3000);
-  } catch (err) {
-    console.error("Could not access camera:", err);
-    emotionSpan.textContent = "Camera unavailable";
-  }
+  console.log("Connected to room:", room.name);
+
+  // Show agent video when they join
+  room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    if (participant.identity === "exit-agent" && track.kind === "video") {
+      track.attach(agentVideo);
+    }
+  });
+
+  // Publish your camera
+  const videoTrack = await createLocalVideoTrack();
+  localVideo.srcObject = new MediaStream([videoTrack.mediaStreamTrack]);
+  await room.localParticipant.publishTrack(videoTrack);
+
+  return room.name;
+}
+
+// Start mock emotion detection
+function startEmotionDetection() {
+  const emotions = ["Calm", "Stressed", "Engaged", "Neutral", "Bored"];
+
+  emotionInterval = setInterval(() => {
+    if (!interviewActive) return;
+    const emotion = emotions[Math.floor(Math.random() * emotions.length)];
+    const timestamp = new Date().toLocaleTimeString();
+    emotionSpan.textContent = `${emotion} (${timestamp})`;
+    emotionHistory.push({ emotion, timestamp });
+  }, 3000);
 }
 
 function stopEmotionDetection() {
   if (emotionInterval) clearInterval(emotionInterval);
-  const stream = video.srcObject;
-  if (stream) {
-    stream.getTracks().forEach(t => t.stop());
-    video.srcObject = null;
-  }
 }
 
 // Start Interview
 startBtn.addEventListener("click", async () => {
-  try {
-    startBtn.disabled = true;
-    emotionSpan.textContent = "Connecting...";
+  startBtn.disabled = true;
 
-    // 1. Get a token from LiveKit
-    const token = await getToken();
+  const roomName = await connectToRoom();
 
-    // 2. Connect to your LiveKit room
-    room = await connect(
-      "wss://exit-interview-agent-1lo01a7d.livekit.cloud",
-      token
-    );
+  // Dispatch agent through backend
+  await fetch("http://localhost:8000/dispatch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agentName: "Interview_Agent",
+      identity: "exit-agent",
+      roomName
+    })
+  });
 
-    console.log("Connected to room:", room.name);
+  console.log("Agent dispatched!");
 
-    // 3. Dispatch the agent through your backend
-    await fetch("http://localhost:8000/dispatch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agentName: "Interview_Agent",
-        identity: "exit-agent",
-        roomName: room.name
-      })
-    });
+  interviewActive = true;
+  endBtn.disabled = false;
+  exportBtn.disabled = false;
 
-    console.log("Agent dispatched!");
-    interviewActive = true;
-    endBtn.disabled = false;
-    exportBtn.disabled = false;
-
-    // 4. Start mock emotion detection
-    await startEmotionDetection();
-  } catch (err) {
-    console.error(err);
-    emotionSpan.textContent = "Error starting interview";
-    startBtn.disabled = false;
-  }
+  startEmotionDetection();
 });
 
 // End Interview
@@ -110,23 +112,15 @@ exportBtn.addEventListener("click", () => {
   doc.text("Emotion Timeline:", 10, 35);
 
   let y = 45;
-  if (emotionHistory.length === 0) {
-    doc.text("No emotion data recorded.", 10, y);
-  } else {
-    emotionHistory.forEach((entry) => {
-      doc.text(`${entry.timestamp} - ${entry.emotion}`, 10, y);
-      y += 7;
-      if (y > 280) {
-        doc.addPage();
-        y = 20;
-      }
-    });
-  }
+  emotionHistory.forEach((entry) => {
+    doc.text(`${entry.timestamp} - ${entry.emotion}`, 10, y);
+    y += 7;
+  });
 
   doc.save("exit-interview-summary.pdf");
 });
 
-// Function to get a LiveKit token
+// Get LiveKit token
 async function getToken() {
   const res = await fetch(
     "https://exit-interview-agent-1lo01a7d.livekit.cloud/api/rooms/token",
@@ -146,4 +140,3 @@ async function getToken() {
   const data = await res.json();
   return data.token;
 }
-
