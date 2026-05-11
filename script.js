@@ -128,7 +128,7 @@ async function getToken() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer YOUR_PUBLIC_LIVEKIT_TOKEN"
+        Authorization: "Bearer APIfyhwkLhJHKjX"
       },
       body: JSON.stringify({
         roomName: "exit-interview",
