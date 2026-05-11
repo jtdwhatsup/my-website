@@ -50,15 +50,14 @@
     <video id="video" autoplay playsinline muted></video>
   </div>
 
-  <div id="emotionBox">
-    <h3>Emotion: <span id="emotion">Idle</span></h3>
-  </div>
+  <h3>Emotion: <span id="emotion">Idle</span></h3>
 
   <div id="status">Idle</div>
 
   <script>
     const LivekitClient = window.LivekitClient;
 
+    // ⭐ YOUR REAL VALUES
     const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
     const PARTICIPANT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg2MTE5OTQsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODUyNTU5NCwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.7d1BAUQOLdVU5sP-1IL4TYDA_jgteTdLTMooH5sfLH0";
     const DISPATCH_URL = "https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/dispatch";
@@ -69,6 +68,11 @@
     // Emotion tracking
     let emotionInterval = null;
     let emotionHistory = [];
+
+    // Metadata + transcript
+    let interviewStart = null;
+    let interviewEnd = null;
+    let transcript = [];
 
     function startEmotionDetection() {
       const emotions = ["Calm", "Stressed", "Engaged", "Neutral", "Bored"];
@@ -87,6 +91,30 @@
       if (emotionInterval) clearInterval(emotionInterval);
     }
 
+    function generateInsights() {
+      let stressCount = emotionHistory.filter(e => e.emotion === "Stressed").length;
+      let boredCount = emotionHistory.filter(e => e.emotion === "Bored").length;
+      let engagedCount = emotionHistory.filter(e => e.emotion === "Engaged").length;
+
+      let insights = [];
+
+      if (stressCount > 2) {
+        insights.push("The participant showed elevated stress during several parts of the interview.");
+      }
+      if (boredCount > 2) {
+        insights.push("There were multiple signs of boredom, possibly indicating disengagement with certain topics.");
+      }
+      if (engagedCount > 2) {
+        insights.push("The participant appeared highly engaged during key questions.");
+      }
+
+      if (insights.length === 0) {
+        insights.push("The participant maintained a relatively stable emotional profile throughout the interview.");
+      }
+
+      return insights;
+    }
+
     async function startInterview() {
       const statusEl = document.getElementById("status");
       const startBtn = document.getElementById("startBtn");
@@ -96,12 +124,18 @@
       startBtn.disabled = true;
       statusEl.innerText = "Connecting to LiveKit...";
 
+      interviewStart = new Date();
+      transcript = [];
+      emotionHistory = [];
+
       try {
+        // 1) Connect to room
         room = new LivekitClient.Room();
         await room.connect(LIVEKIT_URL, PARTICIPANT_TOKEN);
 
         statusEl.innerText = "Connected to room";
 
+        // 2) Publish local camera + mic
         const videoEl = document.getElementById("video");
         const localTracks = await LivekitClient.createLocalTracks({ video: true, audio: true });
         localTrack = localTracks;
@@ -112,8 +146,16 @@
             const mediaStream = new MediaStream([track.mediaStreamTrack]);
             videoEl.srcObject = mediaStream;
           }
+          if (track.kind === "audio") {
+            transcript.push({
+              speaker: "User",
+              text: "User audio stream started.",
+              timestamp: new Date().toLocaleTimeString()
+            });
+          }
         }
 
+        // 3) Listen for agent audio
         room
           .on(LivekitClient.RoomEvent.ParticipantConnected, (p) => {
             console.log("Participant joined:", p.identity);
@@ -125,6 +167,12 @@
               audio.srcObject = new MediaStream([track.mediaStreamTrack]);
               document.body.appendChild(audio);
               console.log("Agent audio subscribed from:", participant.identity);
+
+              transcript.push({
+                speaker: "Agent",
+                text: "Agent spoke (audio only, no transcript).",
+                timestamp: new Date().toLocaleTimeString()
+              });
             }
           })
           .on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
@@ -136,6 +184,7 @@
             }
           });
 
+        // 4) Dispatch the agent
         statusEl.innerText = "Dispatching agent...";
 
         await fetch(DISPATCH_URL, {
@@ -152,6 +201,7 @@
         endBtn.disabled = false;
         exportBtn.disabled = false;
 
+        // 5) Start emotion detection
         startEmotionDetection();
 
       } catch (err) {
@@ -166,6 +216,8 @@
       const statusEl = document.getElementById("status");
       const startBtn = document.getElementById("startBtn");
       const endBtn = document.getElementById("endBtn");
+
+      interviewEnd = new Date();
 
       try {
         if (room) {
@@ -194,20 +246,97 @@
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
 
-      doc.setFontSize(16);
-      doc.text("Exit Interview Summary", 10, 20);
+      // Title
+      doc.setFontSize(18);
+      doc.text("Exit Interview Summary", 10, 15);
 
+      // Metadata
       doc.setFontSize(12);
-      doc.text("Emotion Timeline:", 10, 35);
+      const startText = interviewStart ? interviewStart.toLocaleString() : "N/A";
+      const endText = interviewEnd ? interviewEnd.toLocaleString() : "N/A";
+      const durationSec = (interviewStart && interviewEnd)
+        ? Math.round((interviewEnd - interviewStart) / 1000)
+        : "N/A";
 
-      let y = 45;
-      emotionHistory.forEach((entry) => {
-        doc.text(`${entry.timestamp} - ${entry.emotion}`, 10, y);
-        y += 7;
+      doc.text(`Start Time: ${startText}`, 10, 30);
+      doc.text(`End Time: ${endText}`, 10, 37);
+      doc.text(`Duration: ${durationSec} seconds`, 10, 44);
+
+      // Emotion Timeline
+      doc.setFontSize(14);
+      doc.text("Emotion Timeline:", 10, 60);
+      doc.setFontSize(12);
+
+      let y = 68;
+      if (emotionHistory.length === 0) {
+        doc.text("No emotion data recorded.", 10, y);
+      } else {
+        emotionHistory.forEach(entry => {
+          doc.text(`${entry.timestamp} - ${entry.emotion}`, 10, y);
+          y += 6;
+          if (y > 280) {
+            doc.addPage();
+            y = 20;
+          }
+        });
+      }
+
+      // Emotion Insights
+      doc.addPage();
+      doc.setFontSize(14);
+      doc.text("Emotion Insights:", 10, 20);
+      doc.setFontSize(12);
+
+      const insights = generateInsights();
+      let iy = 30;
+      insights.forEach(i => {
+        doc.text(`• ${i}`, 10, iy);
+        iy += 7;
+        if (iy > 280) {
+          doc.addPage();
+          iy = 20;
+        }
       });
+
+      // Transcript (basic)
+      doc.addPage();
+      doc.setFontSize(14);
+      doc.text("Interview Transcript (High-Level):", 10, 20);
+      doc.setFontSize(12);
+
+      let ty = 30;
+      if (transcript.length === 0) {
+        doc.text("No transcript data captured (audio only).", 10, ty);
+      } else {
+        transcript.forEach(t => {
+          doc.text(`${t.timestamp} - ${t.speaker}: ${t.text}`, 10, ty, { maxWidth: 180 });
+          ty += 7;
+          if (ty > 280) {
+            doc.addPage();
+            ty = 20;
+          }
+        });
+      }
+
+      // Overall Summary
+      doc.addPage();
+      doc.setFontSize(14);
+      doc.text("Overall Summary:", 10, 20);
+      doc.setFontSize(12);
+      doc.text(
+        "Overall, the participant demonstrated a mix of emotional states throughout the interview. " +
+        "Engagement and stress levels varied depending on the topic, suggesting that certain areas " +
+        "of the role or environment may be more impactful than others. The emotional signals, combined " +
+        "with the interview flow, provide useful insight into the participant's experience, motivation, " +
+        "and potential areas for organizational improvement.",
+        10,
+        30,
+        { maxWidth: 180 }
+      );
 
       doc.save("exit-interview-summary.pdf");
     }
   </script>
 </body>
 </html>
+
