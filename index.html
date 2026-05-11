@@ -3,25 +3,211 @@
 <head>
   <meta charset="UTF-8" />
   <title>Exit Interview</title>
+
+  <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      text-align: center;
+    }
+    h1 { margin-bottom: 20px; }
+    button {
+      background-color: #28a745;
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      margin: 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:disabled {
+      background-color: #999;
+      cursor: not-allowed;
+    }
+    #video {
+      margin-top: 20px;
+      width: 480px;
+      height: 360px;
+      background: #000;
+    }
+    #status { margin-top: 15px; font-weight: bold; }
+  </style>
 </head>
 
 <body>
-  <h1>Exit Interview</h1>
+  <h1>Start Your Exit Interview</h1>
 
-  <h3>Your Camera</h3>
-  <video id="localVideo" autoplay playsinline muted width="300"></video>
+  <button id="startBtn" onclick="startInterview()">Start Interview</button>
+  <button id="endBtn" onclick="endInterview()" disabled>End Interview</button>
+  <button id="exportBtn" onclick="exportPDF()" disabled>Export PDF Summary</button>
 
-  <h3>Agent</h3>
-  <video id="agentVideo" autoplay playsinline width="300"></video>
+  <div>
+    <video id="video" autoplay playsinline muted></video>
+  </div>
 
-  <p><strong>Emotion:</strong> <span id="emotion">Not started</span></p>
+  <div id="emotionBox">
+    <h3>Emotion: <span id="emotion">Idle</span></h3>
+  </div>
 
-  <button id="start">Start Interview</button>
-  <button id="end" disabled>End Interview</button>
-  <button id="export" disabled>Export PDF Summary</button>
+  <div id="status">Idle</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="script.js"></script>
+  <script>
+    const LivekitClient = window.LivekitClient;
+
+    const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
+    const PARTICIPANT_TOKEN = "YOUR_TOKEN_HERE";
+    const DISPATCH_URL = "https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/dispatch";
+
+    let room = null;
+    let localTrack = null;
+
+    // Emotion tracking
+    let emotionInterval = null;
+    let emotionHistory = [];
+
+    function startEmotionDetection() {
+      const emotions = ["Calm", "Stressed", "Engaged", "Neutral", "Bored"];
+
+      emotionInterval = setInterval(() => {
+        const emotion = emotions[Math.floor(Math.random() * emotions.length)];
+        const timestamp = new Date().toLocaleTimeString();
+
+        document.getElementById("emotion").innerText = `${emotion} (${timestamp})`;
+
+        emotionHistory.push({ emotion, timestamp });
+      }, 3000);
+    }
+
+    function stopEmotionDetection() {
+      if (emotionInterval) clearInterval(emotionInterval);
+    }
+
+    async function startInterview() {
+      const statusEl = document.getElementById("status");
+      const startBtn = document.getElementById("startBtn");
+      const endBtn = document.getElementById("endBtn");
+      const exportBtn = document.getElementById("exportBtn");
+
+      startBtn.disabled = true;
+      statusEl.innerText = "Connecting to LiveKit...";
+
+      try {
+        room = new LivekitClient.Room();
+        await room.connect(LIVEKIT_URL, PARTICIPANT_TOKEN);
+
+        statusEl.innerText = "Connected to room";
+
+        const videoEl = document.getElementById("video");
+        const localTracks = await LivekitClient.createLocalTracks({ video: true, audio: true });
+        localTrack = localTracks;
+
+        for (const track of localTracks) {
+          await room.localParticipant.publishTrack(track);
+          if (track.kind === "video") {
+            const mediaStream = new MediaStream([track.mediaStreamTrack]);
+            videoEl.srcObject = mediaStream;
+          }
+        }
+
+        room
+          .on(LivekitClient.RoomEvent.ParticipantConnected, (p) => {
+            console.log("Participant joined:", p.identity);
+          })
+          .on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+            if (track.kind === "audio") {
+              const audio = document.createElement("audio");
+              audio.autoplay = true;
+              audio.srcObject = new MediaStream([track.mediaStreamTrack]);
+              document.body.appendChild(audio);
+              console.log("Agent audio subscribed from:", participant.identity);
+            }
+          })
+          .on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
+            console.log("Connection state:", state);
+            if (state === "disconnected") {
+              statusEl.innerText = "Disconnected";
+              startBtn.disabled = false;
+              endBtn.disabled = true;
+            }
+          });
+
+        statusEl.innerText = "Dispatching agent...";
+
+        await fetch(DISPATCH_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agentName: "Interview_Agent",
+            identity: "exit-agent",
+            roomName: "exit-interview",
+          }),
+        });
+
+        statusEl.innerText = "Agent joining and starting interview...";
+        endBtn.disabled = false;
+        exportBtn.disabled = false;
+
+        startEmotionDetection();
+
+      } catch (err) {
+        console.error(err);
+        statusEl.innerText = "Error: " + (err.message || err);
+        startBtn.disabled = false;
+        endBtn.disabled = true;
+      }
+    }
+
+    async function endInterview() {
+      const statusEl = document.getElementById("status");
+      const startBtn = document.getElementById("startBtn");
+      const endBtn = document.getElementById("endBtn");
+
+      try {
+        if (room) {
+          await room.disconnect();
+          room = null;
+        }
+
+        if (localTrack) {
+          for (const t of localTrack) t.stop();
+          localTrack = null;
+        }
+
+        stopEmotionDetection();
+        statusEl.innerText = "Interview ended.";
+
+      } catch (err) {
+        console.error(err);
+        statusEl.innerText = "Error ending interview.";
+      } finally {
+        startBtn.disabled = false;
+        endBtn.disabled = true;
+      }
+    }
+
+    function exportPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFontSize(16);
+      doc.text("Exit Interview Summary", 10, 20);
+
+      doc.setFontSize(12);
+      doc.text("Emotion Timeline:", 10, 35);
+
+      let y = 45;
+      emotionHistory.forEach((entry) => {
+        doc.text(`${entry.timestamp} - ${entry.emotion}`, 10, y);
+        y += 7;
+      });
+
+      doc.save("exit-interview-summary.pdf");
+    }
+  </script>
 </body>
 </html>
-
