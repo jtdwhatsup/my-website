@@ -8,16 +8,20 @@
 <body>
   <h1>Exit Interview</h1>
 
-  <video id="video" width="320" height="240" autoplay muted></video>
+  <h3>Your Camera</h3>
+  <video id="localVideo" autoplay playsinline muted width="300"></video>
+
+  <h3>Agent</h3>
+  <video id="agentVideo" autoplay playsinline width="300"></video>
+
   <p><strong>Emotion:</strong> <span id="emotion">Not started</span></p>
 
   <button id="start">Start Interview</button>
   <button id="end" disabled>End Interview</button>
   <button id="export" disabled>Export PDF Summary</button>
 
-  <!-- jsPDF for PDF export -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-
   <script type="module" src="script.js"></script>
 </body>
 </html>
+
