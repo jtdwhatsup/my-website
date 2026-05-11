@@ -4,8 +4,13 @@
   <meta charset="UTF-8" />
   <title>Exit Interview</title>
 
+  <!-- LiveKit + jsPDF -->
   <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <!-- TensorFlow + BlazeFace for eye/gaze detection -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
   <style>
     body {
@@ -57,7 +62,7 @@
   <script>
     const LivekitClient = window.LivekitClient;
 
-    // ⭐ YOUR REAL VALUES
+    // LiveKit config (your real values)
     const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
     const PARTICIPANT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg2MTE5OTQsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODUyNTU5NCwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.7d1BAUQOLdVU5sP-1IL4TYDA_jgteTdLTMooH5sfLH0";
     const DISPATCH_URL = "https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/dispatch";
@@ -69,10 +74,25 @@
     let emotionInterval = null;
     let emotionHistory = [];
 
+    // Gaze / eye-contact tracking
+    let gazeHistory = [];
+    let gazeModel = null;
+
     // Metadata + transcript
     let interviewStart = null;
     let interviewEnd = null;
     let transcript = [];
+
+    // Load BlazeFace model
+    async function loadGazeModel() {
+      try {
+        gazeModel = await blazeface.load();
+        console.log("BlazeFace model loaded");
+      } catch (e) {
+        console.error("Error loading BlazeFace model:", e);
+      }
+    }
+    loadGazeModel();
 
     function startEmotionDetection() {
       const emotions = ["Calm", "Stressed", "Engaged", "Neutral", "Bored"];
@@ -91,7 +111,42 @@
       if (emotionInterval) clearInterval(emotionInterval);
     }
 
-    function generateInsights() {
+    async function startGazeDetection() {
+      const video = document.getElementById("video");
+
+      setInterval(async () => {
+        if (!gazeModel) return;
+        if (!video || video.readyState < 2) return; // wait for video to be ready
+
+        try {
+          const predictions = await gazeModel.estimateFaces(video, false);
+
+          const timestamp = new Date().toLocaleTimeString();
+
+          if (predictions.length > 0) {
+            const face = predictions[0];
+            const leftEye = face.landmarks[0];
+            const rightEye = face.landmarks[1];
+
+            gazeHistory.push({
+              timestamp,
+              leftEye,
+              rightEye,
+              lookingForward: true
+            });
+          } else {
+            gazeHistory.push({
+              timestamp,
+              lookingForward: false
+            });
+          }
+        } catch (e) {
+          console.error("Gaze detection error:", e);
+        }
+      }, 1500);
+    }
+
+    function generateEmotionInsights() {
       let stressCount = emotionHistory.filter(e => e.emotion === "Stressed").length;
       let boredCount = emotionHistory.filter(e => e.emotion === "Bored").length;
       let engagedCount = emotionHistory.filter(e => e.emotion === "Engaged").length;
@@ -115,6 +170,26 @@
       return insights;
     }
 
+    function generateGazeInsights() {
+      const forwardCount = gazeHistory.filter(g => g.lookingForward).length;
+      const awayCount = gazeHistory.filter(g => !g.lookingForward).length;
+
+      let insights = [];
+
+      if (gazeHistory.length === 0) {
+        insights.push("No gaze data was captured.");
+        return insights;
+      }
+
+      if (forwardCount > awayCount) {
+        insights.push("The participant maintained consistent eye contact, suggesting confidence and engagement.");
+      } else {
+        insights.push("The participant frequently looked away, which may indicate discomfort, distraction, or reflection.");
+      }
+
+      return insights;
+    }
+
     async function startInterview() {
       const statusEl = document.getElementById("status");
       const startBtn = document.getElementById("startBtn");
@@ -127,6 +202,7 @@
       interviewStart = new Date();
       transcript = [];
       emotionHistory = [];
+      gazeHistory = [];
 
       try {
         // 1) Connect to room
@@ -201,8 +277,9 @@
         endBtn.disabled = false;
         exportBtn.disabled = false;
 
-        // 5) Start emotion detection
+        // 5) Start emotion + gaze detection
         startEmotionDetection();
+        startGazeDetection();
 
       } catch (err) {
         console.error(err);
@@ -287,9 +364,9 @@
       doc.text("Emotion Insights:", 10, 20);
       doc.setFontSize(12);
 
-      const insights = generateInsights();
+      const emotionInsights = generateEmotionInsights();
       let iy = 30;
-      insights.forEach(i => {
+      emotionInsights.forEach(i => {
         doc.text(`• ${i}`, 10, iy);
         iy += 7;
         if (iy > 280) {
@@ -298,7 +375,24 @@
         }
       });
 
-      // Transcript (basic)
+      // Gaze / Eye Contact Insights
+      doc.addPage();
+      doc.setFontSize(14);
+      doc.text("Eye Contact & Gaze Insights:", 10, 20);
+      doc.setFontSize(12);
+
+      const gazeInsights = generateGazeInsights();
+      let gy = 30;
+      gazeInsights.forEach(g => {
+        doc.text(`• ${g}`, 10, gy);
+        gy += 7;
+        if (gy > 280) {
+          doc.addPage();
+          gy = 20;
+        }
+      });
+
+      // Transcript (high-level)
       doc.addPage();
       doc.setFontSize(14);
       doc.text("Interview Transcript (High-Level):", 10, 20);
@@ -318,17 +412,40 @@
         });
       }
 
+      // Gaze Timeline
+      doc.addPage();
+      doc.setFontSize(14);
+      doc.text("Gaze Timeline:", 10, 20);
+      doc.setFontSize(12);
+
+      let gy2 = 30;
+      if (gazeHistory.length === 0) {
+        doc.text("No gaze data recorded.", 10, gy2);
+      } else {
+        gazeHistory.forEach(g => {
+          const text = g.lookingForward
+            ? `${g.timestamp} - Looking forward`
+            : `${g.timestamp} - Looking away`;
+          doc.text(text, 10, gy2);
+          gy2 += 7;
+          if (gy2 > 280) {
+            doc.addPage();
+            gy2 = 20;
+          }
+        });
+      }
+
       // Overall Summary
       doc.addPage();
       doc.setFontSize(14);
       doc.text("Overall Summary:", 10, 20);
       doc.setFontSize(12);
       doc.text(
-        "Overall, the participant demonstrated a mix of emotional states throughout the interview. " +
-        "Engagement and stress levels varied depending on the topic, suggesting that certain areas " +
-        "of the role or environment may be more impactful than others. The emotional signals, combined " +
-        "with the interview flow, provide useful insight into the participant's experience, motivation, " +
-        "and potential areas for organizational improvement.",
+        "Overall, the participant demonstrated a mix of emotional states and varying levels of eye contact " +
+        "throughout the interview. Engagement and stress levels shifted depending on the topic, while gaze " +
+        "patterns provide additional context about comfort, focus, and attention. Together, these signals " +
+        "offer a richer understanding of the participant's experience, mindset, and potential areas for " +
+        "organizational improvement.",
         10,
         30,
         { maxWidth: 180 }
@@ -339,4 +456,3 @@
   </script>
 </body>
 </html>
-
