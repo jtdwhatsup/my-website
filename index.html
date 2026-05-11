@@ -1,203 +1,173 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Exit Interview</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        text-align: center;
-        margin-top: 40px;
-      }
-      #video-area video {
-        width: 400px;
-        border-radius: 10px;
-        margin-top: 20px;
-      }
-      button {
-        padding: 12px 20px;
-        font-size: 18px;
-        border: none;
-        background-color: #4CAF50;
-        color: white;
-        border-radius: 8px;
-        cursor: pointer;
-        margin: 10px;
-      }
-      button:hover {
-        background-color: #45a049;
-      }
-      #status {
-        margin-top: 15px;
-        font-weight: bold;
-      }
-    </style>
-  </head>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Exit Interview</title>
+  <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      text-align: center;
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    button {
+      background-color: #28a745;
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      margin: 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:disabled {
+      background-color: #999;
+      cursor: not-allowed;
+    }
+    #video {
+      margin-top: 20px;
+      width: 480px;
+      height: 360px;
+      background: #000;
+    }
+    #status {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>Start Your Exit Interview</h1>
 
-  <body>
-    <h1>Start Your Exit Interview</h1>
+  <button id="startBtn" onclick="startInterview()">Start Interview</button>
+  <button id="endBtn" onclick="endInterview()" disabled>End Interview</button>
 
-    <button onclick="startInterview()">Start Interview</button>
-    <button onclick="downloadPDF()">Download PDF Summary</button>
+  <div>
+    <video id="video" autoplay playsinline muted></video>
+  </div>
 
-    <div id="video-area"></div>
-    <div id="status"></div>
+  <div id="status">Idle</div>
 
-    <!-- Libraries -->
-    <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script>
+    const LivekitClient = window.LivekitClient;
 
-    <script>
-      async function startInterview() {
-        document.getElementById("status").innerText = "Connecting to LiveKit...";
+    // ⭐ Your REAL LiveKit WebSocket URL
+    const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
 
-        const room = new LivekitClient.Room();
+    // ⭐ Your REAL participant token
+    const PARTICIPANT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg0Nzk1MjEsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODQ3NTkyMSwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.sSNRWMxPQ9A6QDIgyC3zmkslR5l4GCYQf489BLiEDO8";
 
-        // Your real token
-        const token =
-          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg0Nzc3NzcsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODQ3NDE3Nywic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.Z06GDpDCgPsAAwmix-p4NlTDuCPOohzqj3_oacUTZCA";
+    // ⭐ Your REAL dispatch endpoint
+    const DISPATCH_URL = "https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/dispatch";
 
-        // Your LiveKit URL
-        const livekitUrl = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
+    let room = null;
+    let localTrack = null;
 
-        await room.connect(livekitUrl, token);
-        document.getElementById("status").innerText =
-          "Connected! Starting camera, mic, and analysis...";
+    async function startInterview() {
+      const statusEl = document.getElementById("status");
+      const startBtn = document.getElementById("startBtn");
+      const endBtn = document.getElementById("endBtn");
 
-        // Mic + camera
+      startBtn.disabled = true;
+      statusEl.innerText = "Connecting to LiveKit...";
+
+      try {
+        // 1) Connect to room
+        room = new LivekitClient.Room();
+        await room.connect(LIVEKIT_URL, PARTICIPANT_TOKEN);
+        statusEl.innerText = "Connected to room";
+
+        // 2) Publish local camera + mic
+        const videoEl = document.getElementById("video");
         const localTracks = await LivekitClient.createLocalTracks({
-          audio: true,
           video: true,
+          audio: true,
         });
-        const videoTrack = localTracks.find((t) => t.kind === "video");
-        const audioTrack = localTracks.find((t) => t.kind === "audio");
+        localTrack = localTracks;
 
-        const videoElement = document.createElement("video");
-        videoElement.autoplay = true;
-        videoElement.muted = true;
-        videoElement.srcObject = new MediaStream([
-          videoTrack.mediaStreamTrack,
-        ]);
-        document.getElementById("video-area").appendChild(videoElement);
-
-        room.localParticipant.publishTrack(videoTrack);
-        room.localParticipant.publishTrack(audioTrack);
-
-        // Dispatch your agent into the room
-        await fetch(
-          "https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/dispatch",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: "Bearer " + token,
-            },
-            body: JSON.stringify({
-              roomName: "exit-interview",
-              identity: "exit-agent",
-            }),
+        for (const track of localTracks) {
+          await room.localParticipant.publishTrack(track);
+          if (track.kind === "video") {
+            const mediaStream = new MediaStream([track.mediaStreamTrack]);
+            videoEl.srcObject = mediaStream;
           }
-        );
-
-        document.getElementById("status").innerText = "Agent joining...";
-
-        // Load face detection model
-        const model = await blazeface.load();
-
-        // Summary data collection
-        const summaryData = {
-          emotions: [],
-          engagement: [],
-          eyeContact: [],
-          smiles: 0,
-          stressSignals: [],
-          timestamps: [],
-        };
-
-        // Detection loop
-        async function detect() {
-          const predictions = await model.estimateFaces(videoElement, false);
-
-          if (predictions.length > 0) {
-            const face = predictions[0];
-
-            // Eye contact (very rough heuristic)
-            const eyeContact =
-              face.landmarks[0][0] > 100 && face.landmarks[0][0] < 300;
-
-            // Smile detection (mouth width vs height)
-            const mouthWidth = face.landmarks[3][0] - face.landmarks[2][0];
-            const mouthHeight = face.landmarks[3][1] - face.landmarks[2][1];
-            const smiling = mouthWidth / mouthHeight > 2.2;
-
-            // Engagement score (face size)
-            const engagementScore =
-              face.topLeft[1] - face.bottomRight[1];
-
-            // Stress indicator (eyebrow distance)
-            const eyebrowDistance =
-              face.landmarks[5][1] - face.landmarks[4][1];
-            const stressed = eyebrowDistance < 10;
-
-            // Save data
-            summaryData.emotions.push("neutral");
-            summaryData.engagement.push(engagementScore);
-            summaryData.eyeContact.push(eyeContact);
-            if (smiling) summaryData.smiles++;
-            if (stressed) summaryData.stressSignals.push(Date.now());
-            summaryData.timestamps.push(Date.now());
-
-            document.getElementById("status").innerText =
-              `Face detected | Smile: ${smiling} | Eye contact: ${eyeContact}`;
-          } else {
-            document.getElementById("status").innerText = "No face detected.";
-          }
-
-          requestAnimationFrame(detect);
         }
 
-        detect();
+        // 3) Listen for agent audio
+        room
+          .on(LivekitClient.RoomEvent.ParticipantConnected, (p) => {
+            console.log("Participant joined:", p.identity);
+          })
+          .on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+            if (track.kind === "audio") {
+              const audio = document.createElement("audio");
+              audio.autoplay = true;
+              audio.srcObject = new MediaStream([track.mediaStreamTrack]);
+              document.body.appendChild(audio);
+              console.log("Agent audio subscribed from:", participant.identity);
+            }
+          })
+          .on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
+            console.log("Connection state:", state);
+            if (state === "disconnected") {
+              statusEl.innerText = "Disconnected";
+              startBtn.disabled = false;
+              endBtn.disabled = true;
+            }
+          });
 
-        // Summary generator
-        window.generateSummary = function () {
-          const avgEngagement =
-            summaryData.engagement.reduce((a, b) => a + b, 0) /
-            summaryData.engagement.length;
+        // 4) Dispatch the agent into the room
+        statusEl.innerText = "Dispatching agent...";
+        await fetch(DISPATCH_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agentName: "Interview_Agent",
+            identity: "exit-agent",
+            roomName: "exit-interview",
+          }),
+        });
 
-          const summary = `
-Exit Interview Summary
------------------------
-Total smiles: ${summaryData.smiles}
-Average engagement: ${avgEngagement.toFixed(2)}
-Eye contact consistency: ${
-            (summaryData.eyeContact.filter((x) => x).length /
-              summaryData.eyeContact.length) *
-            100
-          }%
-Stress signals detected: ${summaryData.stressSignals.length}
-          `;
+        statusEl.innerText = "Agent joining and starting interview...";
+        endBtn.disabled = false;
 
-          alert(summary);
-          return summary;
-        };
+      } catch (err) {
+        console.error(err);
+        statusEl.innerText = "Error: " + (err.message || err);
+        startBtn.disabled = false;
+        endBtn.disabled = true;
       }
+    }
 
-      // PDF download
-      async function downloadPDF() {
-        const summaryText = generateSummary();
+    async function endInterview() {
+      const statusEl = document.getElementById("status");
+      const startBtn = document.getElementById("startBtn");
+      const endBtn = document.getElementById("endBtn");
 
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
-
-        doc.setFont("Helvetica", "normal");
-        doc.setFontSize(14);
-
-        const lines = doc.splitTextToSize(summaryText, 180);
-        doc.text(lines, 15, 20);
-
-        doc.save("Exit_Interview_Summary.pdf");
+      try {
+        if (room) {
+          await room.disconnect();
+          room = null;
+        }
+        if (localTrack) {
+          for (const t of localTrack) {
+            t.stop();
+          }
+          localTrack = null;
+        }
+        statusEl.innerText = "Interview ended.";
+      } catch (err) {
+        console.error(err);
+        statusEl.innerText = "Error ending interview.";
+      } finally {
+        startBtn.disabled = false;
+        endBtn.disabled = true;
       }
-    </script>
-  </body>
+    }
+  </script>
+</body>
 </html>
