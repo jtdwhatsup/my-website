@@ -54,18 +54,18 @@
 
         const room = new LivekitClient.Room();
 
-        // ⭐ Your real token
+        // Your real token
         const token =
           "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg0NzIxNDcsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODQ3MTI0Nywic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.UP3cqRbuvX-yf-h1YjOFnDnP1xK1klOAmg0Qh-3LdQc";
 
-        // ⭐ Your LiveKit URL
+        // Your LiveKit URL
         const livekitUrl = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
 
         await room.connect(livekitUrl, token);
         document.getElementById("status").innerText =
           "Connected! Starting camera, mic, and analysis...";
 
-        // ⭐ Mic + camera
+        // Mic + camera
         const localTracks = await LivekitClient.createLocalTracks({
           audio: true,
           video: true,
@@ -84,7 +84,7 @@
         room.localParticipant.publishTrack(videoTrack);
         room.localParticipant.publishTrack(audioTrack);
 
-        // ⭐ Dispatch your agent into the room
+        // Dispatch your agent into the room
         await fetch(
           "https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/dispatch",
           {
@@ -102,10 +102,10 @@
 
         document.getElementById("status").innerText = "Agent joining...";
 
-        // ⭐ Load face detection model
+        // Load face detection model
         const model = await blazeface.load();
 
-        // ⭐ Summary data collection
+        // Summary data collection
         const summaryData = {
           emotions: [],
           engagement: [],
@@ -115,27 +115,27 @@
           timestamps: [],
         };
 
-        // ⭐ Detection loop
+        // Detection loop
         async function detect() {
           const predictions = await model.estimateFaces(videoElement, false);
 
           if (predictions.length > 0) {
             const face = predictions[0];
 
-            // Eye contact
+            // Eye contact (very rough heuristic)
             const eyeContact =
               face.landmarks[0][0] > 100 && face.landmarks[0][0] < 300;
 
-            // Smile detection
+            // Smile detection (mouth width vs height)
             const mouthWidth = face.landmarks[3][0] - face.landmarks[2][0];
             const mouthHeight = face.landmarks[3][1] - face.landmarks[2][1];
             const smiling = mouthWidth / mouthHeight > 2.2;
 
-            // Engagement score
+            // Engagement score (face size)
             const engagementScore =
               face.topLeft[1] - face.bottomRight[1];
 
-            // Stress indicator
+            // Stress indicator (eyebrow distance)
             const eyebrowDistance =
               face.landmarks[5][1] - face.landmarks[4][1];
             const stressed = eyebrowDistance < 10;
@@ -159,7 +159,7 @@
 
         detect();
 
-        // ⭐ Summary generator
+        // Summary generator
         window.generateSummary = function () {
           const avgEngagement =
             summaryData.engagement.reduce((a, b) => a + b, 0) /
@@ -183,7 +183,7 @@ Stress signals detected: ${summaryData.stressSignals.length}
         };
       }
 
-      // ⭐ PDF download
+      // PDF download
       async function downloadPDF() {
         const summaryText = generateSummary();
 
