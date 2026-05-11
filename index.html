@@ -21,6 +21,7 @@
         color: white;
         border-radius: 8px;
         cursor: pointer;
+        margin: 10px;
       }
       button:hover {
         background-color: #45a049;
@@ -34,64 +35,169 @@
 
   <body>
     <h1>Start Your Exit Interview</h1>
+
     <button onclick="startInterview()">Start Interview</button>
+    <button onclick="downloadPDF()">Download PDF Summary</button>
+
     <div id="video-area"></div>
     <div id="status"></div>
 
-    <!-- Load LiveKit client and face detection libraries -->
+    <!-- Libraries -->
     <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <script>
       async function startInterview() {
         document.getElementById("status").innerText = "Connecting to LiveKit...";
 
-        // Create a LiveKit room
         const room = new LivekitClient.Room();
 
-        // Replace these placeholders
-        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg0NzIxNDcsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODQ3MTI0Nywic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.UP3cqRbuvX-yf-h1YjOFnDnP1xK1klOAmg0Qh-3LdQc";
+        // ⭐ Your real token
+        const token =
+          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg0NzIxNDcsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODQ3MTI0Nywic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.UP3cqRbuvX-yf-h1YjOFnDnP1xK1klOAmg0Qh-3LdQc";
+
+        // ⭐ Your LiveKit URL
         const livekitUrl = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
 
         await room.connect(livekitUrl, token);
-        document.getElementById("status").innerText = "Connected! Starting camera and mic...";
+        document.getElementById("status").innerText =
+          "Connected! Starting camera, mic, and analysis...";
 
-        // Get camera + mic
-        const localTracks = await LivekitClient.createLocalTracks({ audio: true, video: true });
-        const videoTrack = localTracks.find(t => t.kind === "video");
-        const audioTrack = localTracks.find(t => t.kind === "audio");
+        // ⭐ Mic + camera
+        const localTracks = await LivekitClient.createLocalTracks({
+          audio: true,
+          video: true,
+        });
+        const videoTrack = localTracks.find((t) => t.kind === "video");
+        const audioTrack = localTracks.find((t) => t.kind === "audio");
 
-        // Show video preview
         const videoElement = document.createElement("video");
         videoElement.autoplay = true;
         videoElement.muted = true;
-        videoElement.srcObject = new MediaStream([videoTrack.mediaStreamTrack]);
+        videoElement.srcObject = new MediaStream([
+          videoTrack.mediaStreamTrack,
+        ]);
         document.getElementById("video-area").appendChild(videoElement);
 
-        // Publish tracks
         room.localParticipant.publishTrack(videoTrack);
         room.localParticipant.publishTrack(audioTrack);
 
-        // Load face detection model
-        const model = await blazeface.load();
-        document.getElementById("status").innerText = "Face detection active.";
+        // ⭐ Dispatch your agent into the room
+        await fetch(
+          "https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/dispatch",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + token,
+            },
+            body: JSON.stringify({
+              roomName: "exit-interview",
+              identity: "exit-agent",
+            }),
+          }
+        );
 
-        // Run detection loop
-        async function detectFaces() {
+        document.getElementById("status").innerText = "Agent joining...";
+
+        // ⭐ Load face detection model
+        const model = await blazeface.load();
+
+        // ⭐ Summary data collection
+        const summaryData = {
+          emotions: [],
+          engagement: [],
+          eyeContact: [],
+          smiles: 0,
+          stressSignals: [],
+          timestamps: [],
+        };
+
+        // ⭐ Detection loop
+        async function detect() {
           const predictions = await model.estimateFaces(videoElement, false);
+
           if (predictions.length > 0) {
-            document.getElementById("status").innerText = `Faces detected: ${predictions.length}`;
+            const face = predictions[0];
+
+            // Eye contact
+            const eyeContact =
+              face.landmarks[0][0] > 100 && face.landmarks[0][0] < 300;
+
+            // Smile detection
+            const mouthWidth = face.landmarks[3][0] - face.landmarks[2][0];
+            const mouthHeight = face.landmarks[3][1] - face.landmarks[2][1];
+            const smiling = mouthWidth / mouthHeight > 2.2;
+
+            // Engagement score
+            const engagementScore =
+              face.topLeft[1] - face.bottomRight[1];
+
+            // Stress indicator
+            const eyebrowDistance =
+              face.landmarks[5][1] - face.landmarks[4][1];
+            const stressed = eyebrowDistance < 10;
+
+            // Save data
+            summaryData.emotions.push("neutral");
+            summaryData.engagement.push(engagementScore);
+            summaryData.eyeContact.push(eyeContact);
+            if (smiling) summaryData.smiles++;
+            if (stressed) summaryData.stressSignals.push(Date.now());
+            summaryData.timestamps.push(Date.now());
+
+            document.getElementById("status").innerText =
+              `Face detected | Smile: ${smiling} | Eye contact: ${eyeContact}`;
           } else {
             document.getElementById("status").innerText = "No face detected.";
           }
-          requestAnimationFrame(detectFaces);
-        }
-        detectFaces();
 
-        console.log("Interview started with mic, camera, and face detection!");
+          requestAnimationFrame(detect);
+        }
+
+        detect();
+
+        // ⭐ Summary generator
+        window.generateSummary = function () {
+          const avgEngagement =
+            summaryData.engagement.reduce((a, b) => a + b, 0) /
+            summaryData.engagement.length;
+
+          const summary = `
+Exit Interview Summary
+-----------------------
+Total smiles: ${summaryData.smiles}
+Average engagement: ${avgEngagement.toFixed(2)}
+Eye contact consistency: ${
+            (summaryData.eyeContact.filter((x) => x).length /
+              summaryData.eyeContact.length) *
+            100
+          }%
+Stress signals detected: ${summaryData.stressSignals.length}
+          `;
+
+          alert(summary);
+          return summary;
+        };
+      }
+
+      // ⭐ PDF download
+      async function downloadPDF() {
+        const summaryText = generateSummary();
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(14);
+
+        const lines = doc.splitTextToSize(summaryText, 180);
+        doc.text(lines, 15, 20);
+
+        doc.save("Exit_Interview_Summary.pdf");
       }
     </script>
   </body>
 </html>
-
