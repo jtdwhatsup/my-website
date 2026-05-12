@@ -27,6 +27,15 @@
       margin-top: 10px;
       display: none;
     }
+
+    #summaryBox {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 20px;
+      display: none;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 
@@ -51,54 +60,78 @@
   <!-- Start Button -->
   <button id="startBtn">Start Interview</button>
 
-  <!-- JS -->
-  <script type="module" src="index.js"></script>
+  <!-- Summary -->
+  <div id="summaryBox"></div>
 
-  <!-- Light Detection Script -->
-  <script>
-    async function checkLighting() {
-      const video = document.getElementById("localVideo");
-      const warning = document.getElementById("lightWarning");
+  <!-- TensorFlow + BlazeFace -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
+  <!-- Main Script -->
+  <script type="module">
+    import {
+      Room,
+      RoomEvent
+    } from "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.esm.js";
 
-        const track = stream.getVideoTracks()[0];
-        const imageCapture = new ImageCapture(track);
+    let model;
+    let engagementTimeline = [];
+    let gazeTimeline = [];
+    let startTime;
+    let endTime;
 
-        setInterval(async () => {
-          const photo = await imageCapture.grabFrame();
-          const canvas = document.createElement("canvas");
-          canvas.width = photo.width;
-          canvas.height = photo.height;
+    const room = new Room();
 
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(photo, 0, 0);
-
-          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-          let total = 0;
-
-          for (let i = 0; i < pixels.length; i += 4) {
-            total += pixels[i] + pixels[i + 1] + pixels[i + 2];
-          }
-
-          const brightness = total / (pixels.length / 4);
-
-          if (brightness < 60) {
-            warning.style.display = "block";
-          } else {
-            warning.style.display = "none";
-          }
-        }, 1500);
-
-      } catch (err) {
-        console.log("Camera error:", err);
-      }
+    async function loadBlazeFace() {
+      model = await blazeface.load();
+      console.log("BlazeFace loaded");
     }
 
-    checkLighting();
-  </script>
+    async function startInterview() {
+      startTime = new Date();
 
-</body>
-</html>
+      const token = await fetch("/dispatch", { method: "POST" })
+        .then((res) => res.text());
+
+      await room.connect(
+        "wss://exit-interview-agent-1lo01a7d.livekit.cloud",
+        token
+      );
+
+      room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        if (track.kind === "audio") {
+          const audio = document.createElement("audio");
+          audio.srcObject = new MediaStream([track.mediaStreamTrack]);
+          audio.autoplay = true;
+          audio.play();
+        }
+      });
+
+      startEngagementTracking();
+    }
+
+    document.getElementById("startBtn").addEventListener("click", startInterview);
+
+    async function startEngagementTracking() {
+      const video = document.getElementById("localVideo");
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+
+      const track = stream.getVideoTracks()[0];
+      const imageCapture = new ImageCapture(track);
+
+      setInterval(async () => {
+        const frame = await imageCapture.grabFrame();
+        const predictions = await model.estimateFaces(frame, false);
+
+        if (predictions.length > 0) {
+          const face = predictions[0];
+          const leftEye = face.landmarks[0];
+          const rightEye = face.landmarks[1];
+
+          const eyeDistance = Math.abs(leftEye[0] - rightEye[0]);
+
+          let gaze = "Looking forward";
+          if (leftEye[0] < rightEye[0] - eyeDistance * 0.3) gaze = "Looking right";
+          if (leftEye[0] > rightEye
