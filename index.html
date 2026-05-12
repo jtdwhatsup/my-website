@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AI Interviewer</title>
+  <title>AI Mock Interview</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -43,35 +43,26 @@
 
   <h1>AI Mock Interview</h1>
 
-  <!-- Resume Upload -->
   <label>Upload your resume:</label>
   <input type="file" id="resumeUpload" accept=".pdf,.doc,.docx" />
   <br><br>
 
-  <!-- Light Detection Warning -->
   <div id="lightWarning">Your lighting is too dark. Try moving to a brighter area.</div>
 
-  <!-- Video Layout -->
   <div id="videoContainer">
     <video id="localVideo" autoplay muted></video>
     <video id="remoteVideo" autoplay></video>
   </div>
 
-  <!-- Buttons -->
   <button id="startBtn">Start Interview</button>
   <button id="endBtn" style="margin-left:10px;">End Interview</button>
 
-  <!-- Summary -->
   <div id="summaryBox"></div>
 
-  <!-- jsPDF for PDF export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-  <!-- TensorFlow + BlazeFace -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
-  <!-- Main Script: LiveKit + engagement + summary + PDF -->
   <script type="module">
     import {
       Room,
@@ -88,40 +79,31 @@
     let engagementTimer;
     let room;
 
-    // Load BlazeFace
     async function loadBlazeFace() {
       model = await blazeface.load();
-      console.log("BlazeFace loaded");
     }
     loadBlazeFace();
 
-    // Start Interview: connect LiveKit, publish camera+mic, start tracking
     async function startInterview() {
       startTime = new Date();
       room = new Room();
 
-      // Get token from your backend
       const token = await fetch("/dispatch", { method: "POST" })
         .then((res) => res.text());
 
-      // Connect to LiveKit Cloud
       await room.connect(
         "wss://exit-interview-agent-1lo01a7d.livekit.cloud",
         token
       );
-      console.log("Connected to LiveKit");
 
-      // Get camera + mic
       localStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true
       });
 
-      // Show camera locally
       const localVideo = document.getElementById("localVideo");
       localVideo.srcObject = localStream;
 
-      // Publish camera + mic to LiveKit
       const tracks = await createLocalTracks({
         audio: true,
         video: true
@@ -130,31 +112,29 @@
       for (const track of tracks) {
         await room.localParticipant.publishTrack(track);
       }
-      console.log("Camera + mic published to LiveKit");
 
-      // Play agent audio when subscribed
       room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
         if (track.kind === "audio") {
           const audio = document.createElement("audio");
           audio.srcObject = new MediaStream([track.mediaStreamTrack]);
           audio.autoplay = true;
           audio.play();
-          console.log("Agent audio playing from", participant.identity);
+        }
+
+        if (track.kind === "video") {
+          const remoteVideo = document.getElementById("remoteVideo");
+          remoteVideo.srcObject = new MediaStream([track.mediaStreamTrack]);
+          remoteVideo.play();
         }
       });
 
-      // Start engagement tracking
       startEngagementTracking();
     }
 
     document.getElementById("startBtn").addEventListener("click", startInterview);
 
-    // Engagement tracking with BlazeFace
     async function startEngagementTracking() {
-      if (!localStream) {
-        console.warn("No local stream for engagement tracking");
-        return;
-      }
+      if (!localStream) return;
 
       const video = document.getElementById("localVideo");
       video.srcObject = localStream;
@@ -188,13 +168,10 @@
               engagement: gaze === "Looking forward" ? "High" : "Low"
             });
           }
-        } catch (e) {
-          console.log("Engagement tracking error:", e);
-        }
+        } catch (e) {}
       }, 1000);
     }
 
-    // Generate summary text
     function generateSummary() {
       endTime = new Date();
 
@@ -221,20 +198,17 @@ The participant showed varying levels of engagement and gaze direction throughou
       return summary;
     }
 
-    // End Interview: stop tracking, disconnect, export PDF
     document.getElementById("endBtn").addEventListener("click", async () => {
       if (engagementTimer) clearInterval(engagementTimer);
 
       if (room) {
         await room.disconnect();
-        console.log("Disconnected from LiveKit");
       }
 
       const summary = generateSummary();
       exportPDF(summary);
     });
 
-    // Export summary as PDF
     function exportPDF(text) {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
@@ -244,21 +218,18 @@ The participant showed varying levels of engagement and gaze direction throughou
     }
   </script>
 
-  <!-- Light Detection Script (reuses camera if available, otherwise gets its own) -->
   <script>
-    let lightStream;
-
     async function checkLighting() {
       const video = document.getElementById("localVideo");
       const warning = document.getElementById("lightWarning");
 
       try {
-        lightStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (!video.srcObject) {
-          video.srcObject = lightStream;
+          video.srcObject = stream;
         }
 
-        const track = lightStream.getVideoTracks()[0];
+        const track = stream.getVideoTracks()[0];
         const imageCapture = new ImageCapture(track);
 
         setInterval(async () => {
@@ -280,14 +251,10 @@ The participant showed varying levels of engagement and gaze direction throughou
 
             const brightness = total / (pixels.length / 4);
             warning.style.display = brightness < 60 ? "block" : "none";
-          } catch (e) {
-            console.log("Light detection error:", e);
-          }
+          } catch (e) {}
         }, 1500);
 
-      } catch (err) {
-        console.log("Camera error for light detection:", err);
-      }
+      } catch (err) {}
     }
 
     checkLighting();
