@@ -77,10 +77,13 @@
     let model;
     let engagementTimeline = [];
     let gazeTimeline = [];
+    let lightTimeline = [];
+    let brightnessValues = [];
     let startTime;
     let endTime;
     let localStream;
     let engagementTimer;
+    let lightTimer;
     let room;
 
     async function loadBlazeFace() {
@@ -91,6 +94,11 @@
     async function startInterview() {
       startTime = new Date();
       room = new Room();
+
+      // ⭐ Unlock audio for Microsoft Edge / Chrome / Safari
+      const unlock = document.createElement("audio");
+      unlock.muted = true;
+      unlock.play().then(() => unlock.remove());
 
       const token = await fetch("/dispatch", { method: "POST" })
         .then((res) => res.text());
@@ -134,7 +142,7 @@
           document.body.appendChild(audio);
         }
 
-        // VIDEO (fixes black screen)
+        // VIDEO
         if (track.kind === "video") {
           const remoteVideo = document.getElementById("remoteVideo");
           remoteVideo.srcObject = new MediaStream([track.mediaStreamTrack]);
@@ -143,6 +151,7 @@
       });
 
       startEngagementTracking();
+      startLightTracking();
     }
 
     document.getElementById("startBtn").addEventListener("click", startInterview);
@@ -186,14 +195,68 @@
       }, 1000);
     }
 
+    async function startLightTracking() {
+      const video = document.getElementById("localVideo");
+      const track = localStream.getVideoTracks()[0];
+      const imageCapture = new ImageCapture(track);
+
+      lightTimer = setInterval(async () => {
+        try {
+          const frame = await imageCapture.grabFrame();
+          const canvas = document.createElement("canvas");
+          canvas.width = frame.width;
+          canvas.height = frame.height;
+
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(frame, 0, 0);
+
+          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          let total = 0;
+
+          for (let i = 0; i < pixels.length; i += 4) {
+            total += pixels[i] + pixels[i + 1] + pixels[i + 2];
+          }
+
+          const brightness = total / (pixels.length / 4);
+          brightnessValues.push(brightness);
+
+          let rating = "Good";
+          if (brightness < 80) rating = "Poor";
+          else if (brightness < 120) rating = "Fair";
+
+          lightTimeline.push({
+            time: new Date().toLocaleTimeString(),
+            brightness: brightness.toFixed(1),
+            rating
+          });
+
+        } catch (e) {}
+      }, 1500);
+    }
+
     function generateSummary() {
       endTime = new Date();
+
+      const avgBrightness = brightnessValues.length
+        ? (brightnessValues.reduce((a, b) => a + b, 0) / brightnessValues.length).toFixed(1)
+        : "N/A";
+
+      let overallLight = "Good";
+      if (avgBrightness < 80) overallLight = "Poor";
+      else if (avgBrightness < 120) overallLight = "Fair";
 
       const summary = `
 Interview Summary
 Start Time: ${startTime?.toLocaleString() || "N/A"}
 End Time: ${endTime.toLocaleString()}
 Duration: ${startTime ? Math.round((endTime - startTime) / 1000) : 0} seconds
+
+Lighting Summary:
+• Average Brightness: ${avgBrightness}
+• Overall Rating: ${overallLight}
+
+Lighting Timeline:
+${lightTimeline.length ? lightTimeline.map(l => "• " + l.time + " - " + l.rating + " (" + l.brightness + ")").join("\n") : "No lighting data recorded."}
 
 Eye Contact & Gaze Insights:
 ${gazeTimeline.length ? gazeTimeline.map(g => "• " + g.time + " - " + g.gaze).join("\n") : "No gaze data recorded."}
@@ -202,7 +265,7 @@ Engagement Timeline:
 ${engagementTimeline.length ? engagementTimeline.map(e => "• " + e.time + " - " + e.engagement).join("\n") : "No engagement data recorded."}
 
 Overall Summary:
-The participant showed varying levels of engagement and gaze direction throughout the interview.
+The participant showed varying levels of engagement, gaze direction, and lighting conditions throughout the interview.
 `;
 
       const box = document.getElementById("summaryBox");
@@ -214,6 +277,7 @@ The participant showed varying levels of engagement and gaze direction throughou
 
     document.getElementById("endBtn").addEventListener("click", async () => {
       if (engagementTimer) clearInterval(engagementTimer);
+      if (lightTimer) clearInterval(lightTimer);
 
       if (room) {
         await room.disconnect();
@@ -230,49 +294,6 @@ The participant showed varying levels of engagement and gaze direction throughou
       doc.text(lines, 10, 10);
       doc.save("Interview_Summary.pdf");
     }
-  </script>
-
-  <!-- Light Detection -->
-  <script>
-    async function checkLighting() {
-      const video = document.getElementById("localVideo");
-      const warning = document.getElementById("lightWarning");
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        if (!video.srcObject) {
-          video.srcObject = stream;
-        }
-
-        const track = stream.getVideoTracks()[0];
-        const imageCapture = new ImageCapture(track);
-
-        setInterval(async () => {
-          try {
-            const photo = await imageCapture.grabFrame();
-            const canvas = document.createElement("canvas");
-            canvas.width = photo.width;
-            canvas.height = photo.height;
-
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(photo, 0, 0);
-
-            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            let total = 0;
-
-            for (let i = 0; i < pixels.length; i += 4) {
-              total += pixels[i] + pixels[i + 1] + pixels[i + 2];
-            }
-
-            const brightness = total / (pixels.length / 4);
-            warning.style.display = brightness < 60 ? "block" : "none";
-          } catch (e) {}
-        }, 1500);
-
-      } catch (err) {}
-    }
-
-    checkLighting();
   </script>
 
 </body>
