@@ -71,11 +71,12 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
-  <!-- Main Script -->
+  <!-- Main Script: LiveKit + engagement + summary + PDF -->
   <script type="module">
     import {
       Room,
-      RoomEvent
+      RoomEvent,
+      createLocalTracks
     } from "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.esm.js";
 
     let model;
@@ -83,91 +84,131 @@
     let gazeTimeline = [];
     let startTime;
     let endTime;
+    let localStream;
+    let engagementTimer;
+    let room;
 
-    const room = new Room();
-
+    // Load BlazeFace
     async function loadBlazeFace() {
       model = await blazeface.load();
       console.log("BlazeFace loaded");
     }
     loadBlazeFace();
 
+    // Start Interview: connect LiveKit, publish camera+mic, start tracking
     async function startInterview() {
       startTime = new Date();
+      room = new Room();
 
+      // Get token from your backend
       const token = await fetch("/dispatch", { method: "POST" })
         .then((res) => res.text());
 
+      // Connect to LiveKit Cloud
       await room.connect(
         "wss://exit-interview-agent-1lo01a7d.livekit.cloud",
         token
       );
+      console.log("Connected to LiveKit");
 
+      // Get camera + mic
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+
+      // Show camera locally
+      const localVideo = document.getElementById("localVideo");
+      localVideo.srcObject = localStream;
+
+      // Publish camera + mic to LiveKit
+      const tracks = await createLocalTracks({
+        audio: true,
+        video: true
+      });
+
+      for (const track of tracks) {
+        await room.localParticipant.publishTrack(track);
+      }
+      console.log("Camera + mic published to LiveKit");
+
+      // Play agent audio when subscribed
       room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
         if (track.kind === "audio") {
           const audio = document.createElement("audio");
           audio.srcObject = new MediaStream([track.mediaStreamTrack]);
           audio.autoplay = true;
           audio.play();
+          console.log("Agent audio playing from", participant.identity);
         }
       });
 
+      // Start engagement tracking
       startEngagementTracking();
     }
 
     document.getElementById("startBtn").addEventListener("click", startInterview);
 
+    // Engagement tracking with BlazeFace
     async function startEngagementTracking() {
+      if (!localStream) {
+        console.warn("No local stream for engagement tracking");
+        return;
+      }
+
       const video = document.getElementById("localVideo");
+      video.srcObject = localStream;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-
-      const track = stream.getVideoTracks()[0];
+      const track = localStream.getVideoTracks()[0];
       const imageCapture = new ImageCapture(track);
 
-      setInterval(async () => {
-        const frame = await imageCapture.grabFrame();
-        const predictions = await model.estimateFaces(frame, false);
+      engagementTimer = setInterval(async () => {
+        try {
+          const frame = await imageCapture.grabFrame();
+          const predictions = await model.estimateFaces(frame, false);
 
-        if (predictions.length > 0) {
-          const face = predictions[0];
-          const leftEye = face.landmarks[0];
-          const rightEye = face.landmarks[1];
+          if (predictions.length > 0) {
+            const face = predictions[0];
+            const leftEye = face.landmarks[0];
+            const rightEye = face.landmarks[1];
 
-          const eyeDistance = Math.abs(leftEye[0] - rightEye[0]);
+            const eyeDistance = Math.abs(leftEye[0] - rightEye[0]);
 
-          let gaze = "Looking forward";
-          if (leftEye[0] < rightEye[0] - eyeDistance * 0.3) gaze = "Looking right";
-          if (leftEye[0] > rightEye[0] + eyeDistance * 0.3) gaze = "Looking left";
+            let gaze = "Looking forward";
+            if (leftEye[0] < rightEye[0] - eyeDistance * 0.3) gaze = "Looking right";
+            if (leftEye[0] > rightEye[0] + eyeDistance * 0.3) gaze = "Looking left";
 
-          gazeTimeline.push({
-            time: new Date().toLocaleTimeString(),
-            gaze
-          });
+            gazeTimeline.push({
+              time: new Date().toLocaleTimeString(),
+              gaze
+            });
 
-          engagementTimeline.push({
-            time: new Date().toLocaleTimeString(),
-            engagement: gaze === "Looking forward" ? "High" : "Low"
-          });
+            engagementTimeline.push({
+              time: new Date().toLocaleTimeString(),
+              engagement: gaze === "Looking forward" ? "High" : "Low"
+            });
+          }
+        } catch (e) {
+          console.log("Engagement tracking error:", e);
         }
       }, 1000);
     }
 
+    // Generate summary text
     function generateSummary() {
       endTime = new Date();
 
       const summary = `
 Interview Summary
-Start Time: ${startTime.toLocaleString()}
+Start Time: ${startTime?.toLocaleString() || "N/A"}
 End Time: ${endTime.toLocaleString()}
-Duration: ${Math.round((endTime - startTime) / 1000)} seconds
+Duration: ${startTime ? Math.round((endTime - startTime) / 1000) : 0} seconds
 
 Eye Contact & Gaze Insights:
-${gazeTimeline.map(g => "• " + g.time + " - " + g.gaze).join("\n")}
+${gazeTimeline.length ? gazeTimeline.map(g => "• " + g.time + " - " + g.gaze).join("\n") : "No gaze data recorded."}
 
 Engagement Timeline:
-${engagementTimeline.map(e => "• " + e.time + " - " + e.engagement).join("\n")}
+${engagementTimeline.length ? engagementTimeline.map(e => "• " + e.time + " - " + e.engagement).join("\n") : "No engagement data recorded."}
 
 Overall Summary:
 The participant showed varying levels of engagement and gaze direction throughout the interview.
@@ -180,11 +221,20 @@ The participant showed varying levels of engagement and gaze direction throughou
       return summary;
     }
 
-    document.getElementById("endBtn").addEventListener("click", () => {
+    // End Interview: stop tracking, disconnect, export PDF
+    document.getElementById("endBtn").addEventListener("click", async () => {
+      if (engagementTimer) clearInterval(engagementTimer);
+
+      if (room) {
+        await room.disconnect();
+        console.log("Disconnected from LiveKit");
+      }
+
       const summary = generateSummary();
       exportPDF(summary);
     });
 
+    // Export summary as PDF
     function exportPDF(text) {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
@@ -194,19 +244,54 @@ The participant showed varying levels of engagement and gaze direction throughou
     }
   </script>
 
-  <!-- Light Detection Script -->
+  <!-- Light Detection Script (reuses camera if available, otherwise gets its own) -->
   <script>
+    let lightStream;
+
     async function checkLighting() {
       const video = document.getElementById("localVideo");
       const warning = document.getElementById("lightWarning");
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
+        lightStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (!video.srcObject) {
+          video.srcObject = lightStream;
+        }
 
-        const track = stream.getVideoTracks()[0];
+        const track = lightStream.getVideoTracks()[0];
         const imageCapture = new ImageCapture(track);
 
         setInterval(async () => {
-          const photo = await imageCapture.grabFrame();
-          const canvas = document
+          try {
+            const photo = await imageCapture.grabFrame();
+            const canvas = document.createElement("canvas");
+            canvas.width = photo.width;
+            canvas.height = photo.height;
+
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(photo, 0, 0);
+
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let total = 0;
+
+            for (let i = 0; i < pixels.length; i += 4) {
+              total += pixels[i] + pixels[i + 1] + pixels[i + 2];
+            }
+
+            const brightness = total / (pixels.length / 4);
+            warning.style.display = brightness < 60 ? "block" : "none";
+          } catch (e) {
+            console.log("Light detection error:", e);
+          }
+        }, 1500);
+
+      } catch (err) {
+        console.log("Camera error for light detection:", err);
+      }
+    }
+
+    checkLighting();
+  </script>
+
+</body>
+</html>
