@@ -1,519 +1,104 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Exit Interview</title>
-
-  <!-- LiveKit + jsPDF -->
-  <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-
-  <!-- TensorFlow + BlazeFace for eye/gaze detection -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
-
+  <title>AI Interviewer</title>
   <style>
     body {
       font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 40px auto;
-      text-align: center;
+      background: #f5f5f5;
+      padding: 20px;
     }
-    h1 { margin-bottom: 10px; }
-    h2 {
-      margin-top: 0;
-      font-weight: normal;
-      color: #555;
-      font-size: 16px;
-    }
-    button {
-      background-color: #28a745;
-      color: white;
-      border: none;
-      padding: 10px 18px;
-      margin: 5px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    button:disabled {
-      background-color: #999;
-      cursor: not-allowed;
-    }
-    .video-container {
+
+    #videoContainer {
       display: flex;
-      justify-content: center;
       gap: 20px;
-      margin-top: 20px;
+      margin-bottom: 20px;
     }
-    .video-box {
-      width: 360px;
-      height: 270px;
-      background: #000;
-      position: relative;
+
+    video {
+      width: 45%;
+      background: black;
       border-radius: 8px;
-      overflow: hidden;
-      border: 1px solid #444;
     }
-    .video-label {
-      position: absolute;
-      bottom: 5px;
-      left: 0;
-      right: 0;
-      text-align: center;
-      color: #fff;
-      font-size: 14px;
-      background: rgba(0, 0, 0, 0.5);
-      padding: 3px 0;
-    }
-    #userVideo, #agentVideo {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background: #000;
-    }
-    #agentVideo {
-      background: #111;
-    }
-    .agent-placeholder {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #888;
-      font-size: 18px;
-      background: radial-gradient(circle at top, #333, #000);
-    }
-    #status { margin-top: 15px; font-weight: bold; }
-    #emotionRow {
-      margin-top: 15px;
-      font-size: 16px;
+
+    #lightWarning {
+      color: red;
+      font-weight: bold;
+      margin-top: 10px;
+      display: none;
     }
   </style>
 </head>
 
 <body>
-  <h1>Exit Interview Assistant</h1>
-  <h2>Welcome! I’ll first ask about your occupation, then we’ll begin your exit interview.</h2>
 
-  <button id="startBtn" onclick="startInterview()">Start Interview</button>
-  <button id="endBtn" onclick="endInterview()" disabled>End Interview</button>
-  <button id="exportBtn" onclick="exportPDF()" disabled>Download Interview Summary</button>
+  <h1>AI Mock Interview</h1>
 
-  <div class="video-container">
-    <div class="video-box">
-      <video id="userVideo" autoplay playsinline muted></video>
-      <div class="video-label">You</div>
-    </div>
-    <div class="video-box">
-      <!-- Option C: blank / silhouette-style placeholder for AI interviewer -->
-      <div id="agentVideo" class="agent-placeholder">
-        AI Interviewer
-      </div>
-      <div class="video-label">AI Interviewer</div>
-    </div>
+  <!-- Resume Upload -->
+  <label>Upload your resume:</label>
+  <input type="file" id="resumeUpload" accept=".pdf,.doc,.docx" />
+  <br><br>
+
+  <!-- Light Detection Warning -->
+  <div id="lightWarning">Your lighting is too dark. Try moving to a brighter area.</div>
+
+  <!-- Video Layout -->
+  <div id="videoContainer">
+    <video id="localVideo" autoplay muted></video>
+    <video id="remoteVideo" autoplay></video>
   </div>
 
-  <div id="emotionRow">
-    Emotion: <span id="emotion">Idle</span>
-  </div>
+  <!-- Start Button -->
+  <button id="startBtn">Start Interview</button>
 
-  <div id="status">Idle</div>
+  <!-- JS -->
+  <script type="module" src="index.js"></script>
 
+  <!-- Light Detection Script -->
   <script>
-    const LivekitClient = window.LivekitClient;
+    async function checkLighting() {
+      const video = document.getElementById("localVideo");
+      const warning = document.getElementById("lightWarning");
 
-    // LiveKit config (your real values)
-    const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
-    const PARTICIPANT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg2MTE5OTQsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODUyNTU5NCwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJleGl0LWludGVydmlldyIsInJvb21Kb2luIjp0cnVlfX0.7d1BAUQOLdVU5sP-1IL4TYDA_jgteTdLTMooH5sfLH0";
-    const DISPATCH_URL = "https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/dispatch";
-
-    let room = null;
-    let localTrack = null;
-
-    // Emotion tracking
-    let emotionInterval = null;
-    let emotionHistory = [];
-
-    // Gaze / eye-contact tracking
-    let gazeHistory = [];
-    let gazeModel = null;
-
-    // Metadata + transcript
-    let interviewStart = null;
-    let interviewEnd = null;
-    let transcript = [];
-
-    // Load BlazeFace model
-    async function loadGazeModel() {
       try {
-        gazeModel = await blazeface.load();
-        console.log("BlazeFace model loaded");
-      } catch (e) {
-        console.error("Error loading BlazeFace model:", e);
-      }
-    }
-    loadGazeModel();
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
 
-    function startEmotionDetection() {
-      const emotions = ["Calm", "Stressed", "Engaged", "Neutral", "Bored"];
+        const track = stream.getVideoTracks()[0];
+        const imageCapture = new ImageCapture(track);
 
-      emotionInterval = setInterval(() => {
-        const emotion = emotions[Math.floor(Math.random() * emotions.length)];
-        const timestamp = new Date().toLocaleTimeString();
+        setInterval(async () => {
+          const photo = await imageCapture.grabFrame();
+          const canvas = document.createElement("canvas");
+          canvas.width = photo.width;
+          canvas.height = photo.height;
 
-        document.getElementById("emotion").innerText = `${emotion} (${timestamp})`;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(photo, 0, 0);
 
-        emotionHistory.push({ emotion, timestamp });
-      }, 3000);
-    }
+          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          let total = 0;
 
-    function stopEmotionDetection() {
-      if (emotionInterval) clearInterval(emotionInterval);
-    }
+          for (let i = 0; i < pixels.length; i += 4) {
+            total += pixels[i] + pixels[i + 1] + pixels[i + 2];
+          }
 
-    async function startGazeDetection() {
-      const video = document.getElementById("userVideo");
+          const brightness = total / (pixels.length / 4);
 
-      setInterval(async () => {
-        if (!gazeModel) return;
-        if (!video || video.readyState < 2) return;
-
-        try {
-          const predictions = await gazeModel.estimateFaces(video, false);
-          const timestamp = new Date().toLocaleTimeString();
-
-          if (predictions.length > 0) {
-            const face = predictions[0];
-            const leftEye = face.landmarks[0];
-            const rightEye = face.landmarks[1];
-
-            gazeHistory.push({
-              timestamp,
-              leftEye,
-              rightEye,
-              lookingForward: true
-            });
+          if (brightness < 60) {
+            warning.style.display = "block";
           } else {
-            gazeHistory.push({
-              timestamp,
-              lookingForward: false
-            });
+            warning.style.display = "none";
           }
-        } catch (e) {
-          console.error("Gaze detection error:", e);
-        }
-      }, 1500);
-    }
-
-    function generateEmotionInsights() {
-      let stressCount = emotionHistory.filter(e => e.emotion === "Stressed").length;
-      let boredCount = emotionHistory.filter(e => e.emotion === "Bored").length;
-      let engagedCount = emotionHistory.filter(e => e.emotion === "Engaged").length;
-
-      let insights = [];
-
-      if (stressCount > 2) {
-        insights.push("The participant showed elevated stress during several parts of the interview.");
-      }
-      if (boredCount > 2) {
-        insights.push("There were multiple signs of boredom, possibly indicating disengagement with certain topics.");
-      }
-      if (engagedCount > 2) {
-        insights.push("The participant appeared highly engaged during key questions.");
-      }
-
-      if (insights.length === 0) {
-        insights.push("The participant maintained a relatively stable emotional profile throughout the interview.");
-      }
-
-      return insights;
-    }
-
-    function generateGazeInsights() {
-      const forwardCount = gazeHistory.filter(g => g.lookingForward).length;
-      const awayCount = gazeHistory.filter(g => !g.lookingForward).length;
-
-      let insights = [];
-
-      if (gazeHistory.length === 0) {
-        insights.push("No gaze data was captured.");
-        return insights;
-      }
-
-      if (forwardCount > awayCount) {
-        insights.push("The participant maintained consistent eye contact, suggesting confidence and engagement.");
-      } else {
-        insights.push("The participant frequently looked away, which may indicate discomfort, distraction, or reflection.");
-      }
-
-      return insights;
-    }
-
-    async function startInterview() {
-      const statusEl = document.getElementById("status");
-      const startBtn = document.getElementById("startBtn");
-      const endBtn = document.getElementById("endBtn");
-      const exportBtn = document.getElementById("exportBtn");
-
-      startBtn.disabled = true;
-      statusEl.innerText = "Connecting to LiveKit...";
-
-      interviewStart = new Date();
-      transcript = [];
-      emotionHistory = [];
-      gazeHistory = [];
-
-      try {
-        // 1) Connect to room
-        room = new LivekitClient.Room();
-        await room.connect(LIVEKIT_URL, PARTICIPANT_TOKEN);
-
-        statusEl.innerText = "Connected to room";
-
-        // 2) Publish local camera + mic
-        const videoEl = document.getElementById("userVideo");
-        const localTracks = await LivekitClient.createLocalTracks({ video: true, audio: true });
-        localTrack = localTracks;
-
-        for (const track of localTracks) {
-          await room.localParticipant.publishTrack(track);
-          if (track.kind === "video") {
-            const mediaStream = new MediaStream([track.mediaStreamTrack]);
-            videoEl.srcObject = mediaStream;
-          }
-          if (track.kind === "audio") {
-            transcript.push({
-              speaker: "User",
-              text: "User audio stream started.",
-              timestamp: new Date().toLocaleTimeString()
-            });
-          }
-        }
-
-        // 3) Listen for agent audio
-        room
-          .on(LivekitClient.RoomEvent.ParticipantConnected, (p) => {
-            console.log("Participant joined:", p.identity);
-          })
-          .on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
-            if (track.kind === "audio") {
-              const audio = document.createElement("audio");
-              audio.autoplay = true;
-              audio.srcObject = new MediaStream([track.mediaStreamTrack]);
-              document.body.appendChild(audio);
-              console.log("Agent audio subscribed from:", participant.identity);
-
-              transcript.push({
-                speaker: "Agent",
-                text: "Agent spoke (audio only, no transcript).",
-                timestamp: new Date().toLocaleTimeString()
-              });
-            }
-          })
-          .on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
-            console.log("Connection state:", state);
-            if (state === "disconnected") {
-              statusEl.innerText = "Disconnected";
-              startBtn.disabled = false;
-              endBtn.disabled = true;
-            }
-          });
-
-        // 4) Dispatch the agent
-        statusEl.innerText = "Dispatching agent...";
-
-        await fetch(DISPATCH_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            agentName: "Interview_Agent",
-            identity: "exit-agent",
-            roomName: "exit-interview",
-          }),
-        });
-
-        statusEl.innerText = "Agent joining. They should greet you, ask your occupation, then begin the exit interview.";
-        endBtn.disabled = false;
-        exportBtn.disabled = false;
-
-        // 5) Start emotion + gaze detection
-        startEmotionDetection();
-        startGazeDetection();
+        }, 1500);
 
       } catch (err) {
-        console.error(err);
-        statusEl.innerText = "Error: " + (err.message || err);
-        startBtn.disabled = false;
-        endBtn.disabled = true;
+        console.log("Camera error:", err);
       }
     }
 
-    async function endInterview() {
-      const statusEl = document.getElementById("status");
-      const startBtn = document.getElementById("startBtn");
-      const endBtn = document.getElementById("endBtn");
-
-      interviewEnd = new Date();
-
-      try {
-        if (room) {
-          await room.disconnect();
-          room = null;
-        }
-
-        if (localTrack) {
-          for (const t of localTrack) t.stop();
-          localTrack = null;
-        }
-
-        stopEmotionDetection();
-        statusEl.innerText = "Interview ended.";
-
-      } catch (err) {
-        console.error(err);
-        statusEl.innerText = "Error ending interview.";
-      } finally {
-        startBtn.disabled = false;
-        endBtn.disabled = true;
-      }
-    }
-
-    function exportPDF() {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-
-      // Title
-      doc.setFontSize(18);
-      doc.text("Exit Interview Summary", 10, 15);
-
-      // Metadata
-      doc.setFontSize(12);
-      const startText = interviewStart ? interviewStart.toLocaleString() : "N/A";
-      const endText = interviewEnd ? interviewEnd.toLocaleString() : "N/A";
-      const durationSec = (interviewStart && interviewEnd)
-        ? Math.round((interviewEnd - interviewStart) / 1000)
-        : "N/A";
-
-      doc.text(`Start Time: ${startText}`, 10, 30);
-      doc.text(`End Time: ${endText}`, 10, 37);
-      doc.text(`Duration: ${durationSec} seconds`, 10, 44);
-
-      // Emotion Timeline
-      doc.setFontSize(14);
-      doc.text("Emotion Timeline:", 10, 60);
-      doc.setFontSize(12);
-
-      let y = 68;
-      if (emotionHistory.length === 0) {
-        doc.text("No emotion data recorded.", 10, y);
-      } else {
-        emotionHistory.forEach(entry => {
-          doc.text(`${entry.timestamp} - ${entry.emotion}`, 10, y);
-          y += 6;
-          if (y > 280) {
-            doc.addPage();
-            y = 20;
-          }
-        });
-      }
-
-      // Emotion Insights
-      doc.addPage();
-      doc.setFontSize(14);
-      doc.text("Emotion Insights:", 10, 20);
-      doc.setFontSize(12);
-
-      const emotionInsights = generateEmotionInsights();
-      let iy = 30;
-      emotionInsights.forEach(i => {
-        doc.text(`• ${i}`, 10, iy);
-        iy += 7;
-        if (iy > 280) {
-          doc.addPage();
-          iy = 20;
-        }
-      });
-
-      // Gaze / Eye Contact Insights
-      doc.addPage();
-      doc.setFontSize(14);
-      doc.text("Eye Contact & Gaze Insights:", 10, 20);
-      doc.setFontSize(12);
-
-      const gazeInsights = generateGazeInsights();
-      let gy = 30;
-      gazeInsights.forEach(g => {
-        doc.text(`• ${g}`, 10, gy);
-        gy += 7;
-        if (gy > 280) {
-          doc.addPage();
-          gy = 20;
-        }
-      });
-
-      // Transcript (high-level)
-      doc.addPage();
-      doc.setFontSize(14);
-      doc.text("Interview Transcript (High-Level):", 10, 20);
-      doc.setFontSize(12);
-
-      let ty = 30;
-      if (transcript.length === 0) {
-        doc.text("No transcript data captured (audio only).", 10, ty);
-      } else {
-        transcript.forEach(t => {
-          doc.text(`${t.timestamp} - ${t.speaker}: ${t.text}`, 10, ty, { maxWidth: 180 });
-          ty += 7;
-          if (ty > 280) {
-            doc.addPage();
-            ty = 20;
-          }
-        });
-      }
-
-      // Gaze Timeline
-      doc.addPage();
-      doc.setFontSize(14);
-      doc.text("Gaze Timeline:", 10, 20);
-      doc.setFontSize(12);
-
-      let gy2 = 30;
-      if (gazeHistory.length === 0) {
-        doc.text("No gaze data recorded.", 10, gy2);
-      } else {
-        gazeHistory.forEach(g => {
-          const text = g.lookingForward
-            ? `${g.timestamp} - Looking forward`
-            : `${g.timestamp} - Looking away`;
-          doc.text(text, 10, gy2);
-          gy2 += 7;
-          if (gy2 > 280) {
-            doc.addPage();
-            gy2 = 20;
-          }
-        });
-      }
-
-      // Overall Summary
-      doc.addPage();
-      doc.setFontSize(14);
-      doc.text("Overall Summary:", 10, 20);
-      doc.setFontSize(12);
-      doc.text(
-        "Overall, the participant demonstrated a mix of emotional states and varying levels of eye contact " +
-        "throughout the interview. Engagement and stress levels shifted depending on the topic, while gaze " +
-        "patterns provide additional context about comfort, focus, and attention. Together, these signals " +
-        "offer a richer understanding of the participant's experience, mindset, and potential areas for " +
-        "organizational improvement.",
-        10,
-        30,
-        { maxWidth: 180 }
-      );
-
-      doc.save("exit-interview-summary.pdf");
-    }
+    checkLighting();
   </script>
+
 </body>
 </html>
