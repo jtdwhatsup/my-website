@@ -59,10 +59,14 @@
 
   <div id="summaryBox"></div>
 
+  <!-- jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- TensorFlow + BlazeFace -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
+  <!-- LiveKit + Engagement + Summary -->
   <script type="module">
     import {
       Room,
@@ -96,14 +100,17 @@
         token
       );
 
+      // Get camera + mic
       localStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true
       });
 
+      // Show local camera
       const localVideo = document.getElementById("localVideo");
       localVideo.srcObject = localStream;
 
+      // Publish camera + mic to LiveKit
       const tracks = await createLocalTracks({
         audio: true,
         video: true
@@ -113,14 +120,21 @@
         await room.localParticipant.publishTrack(track);
       }
 
+      // Play agent audio + video
       room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+
+        // AUDIO
         if (track.kind === "audio") {
           const audio = document.createElement("audio");
           audio.srcObject = new MediaStream([track.mediaStreamTrack]);
           audio.autoplay = true;
-          audio.play();
+          audio.playsInline = true;
+          audio.muted = false;
+          audio.addEventListener("canplay", () => audio.play());
+          document.body.appendChild(audio);
         }
 
+        // VIDEO (fixes black screen)
         if (track.kind === "video") {
           const remoteVideo = document.getElementById("remoteVideo");
           remoteVideo.srcObject = new MediaStream([track.mediaStreamTrack]);
@@ -218,6 +232,7 @@ The participant showed varying levels of engagement and gaze direction throughou
     }
   </script>
 
+  <!-- Light Detection -->
   <script>
     async function checkLighting() {
       const video = document.getElementById("localVideo");
