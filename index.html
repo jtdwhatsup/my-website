@@ -57,11 +57,15 @@
     <video id="remoteVideo" autoplay></video>
   </div>
 
-  <!-- Start Button -->
+  <!-- Buttons -->
   <button id="startBtn">Start Interview</button>
+  <button id="endBtn" style="margin-left:10px;">End Interview</button>
 
   <!-- Summary -->
   <div id="summaryBox"></div>
+
+  <!-- jsPDF for PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <!-- TensorFlow + BlazeFace -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0"></script>
@@ -86,6 +90,7 @@
       model = await blazeface.load();
       console.log("BlazeFace loaded");
     }
+    loadBlazeFace();
 
     async function startInterview() {
       startTime = new Date();
@@ -134,4 +139,74 @@
 
           let gaze = "Looking forward";
           if (leftEye[0] < rightEye[0] - eyeDistance * 0.3) gaze = "Looking right";
-          if (leftEye[0] > rightEye
+          if (leftEye[0] > rightEye[0] + eyeDistance * 0.3) gaze = "Looking left";
+
+          gazeTimeline.push({
+            time: new Date().toLocaleTimeString(),
+            gaze
+          });
+
+          engagementTimeline.push({
+            time: new Date().toLocaleTimeString(),
+            engagement: gaze === "Looking forward" ? "High" : "Low"
+          });
+        }
+      }, 1000);
+    }
+
+    function generateSummary() {
+      endTime = new Date();
+
+      const summary = `
+Interview Summary
+Start Time: ${startTime.toLocaleString()}
+End Time: ${endTime.toLocaleString()}
+Duration: ${Math.round((endTime - startTime) / 1000)} seconds
+
+Eye Contact & Gaze Insights:
+${gazeTimeline.map(g => "• " + g.time + " - " + g.gaze).join("\n")}
+
+Engagement Timeline:
+${engagementTimeline.map(e => "• " + e.time + " - " + e.engagement).join("\n")}
+
+Overall Summary:
+The participant showed varying levels of engagement and gaze direction throughout the interview.
+`;
+
+      const box = document.getElementById("summaryBox");
+      box.style.display = "block";
+      box.textContent = summary;
+
+      return summary;
+    }
+
+    document.getElementById("endBtn").addEventListener("click", () => {
+      const summary = generateSummary();
+      exportPDF(summary);
+    });
+
+    function exportPDF(text) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const lines = doc.splitTextToSize(text, 180);
+      doc.text(lines, 10, 10);
+      doc.save("Interview_Summary.pdf");
+    }
+  </script>
+
+  <!-- Light Detection Script -->
+  <script>
+    async function checkLighting() {
+      const video = document.getElementById("localVideo");
+      const warning = document.getElementById("lightWarning");
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+
+        const track = stream.getVideoTracks()[0];
+        const imageCapture = new ImageCapture(track);
+
+        setInterval(async () => {
+          const photo = await imageCapture.grabFrame();
+          const canvas = document
