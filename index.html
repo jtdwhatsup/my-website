@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Mock Interview Coach (Demo)</title>
+  <title>Mock Interview Coach</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
@@ -103,7 +103,7 @@
   <!-- LEFT: video + controls + metrics -->
   <div class="card">
     <h2>Mock Interview Coach</h2>
-    <p>Room: <b>interview-room</b> (demo)</p>
+    <p>Room: <b>interview-room</b></p>
 
     <div style="position: relative;">
       <video id="localVideo" autoplay playsinline muted></video>
@@ -115,7 +115,7 @@
     <button id="muteBtn" disabled>Mute mic</button>
     <button id="downloadPdfBtn" disabled>Download PDF Summary</button>
 
-    <p id="status">Status: Demo (no server connection)</p>
+    <p id="status">Status: Disconnected</p>
 
     <div style="margin-top: 10px;">
       <div>
@@ -174,6 +174,15 @@
 </div>
 
 <script type="module">
+  // ---- LIVEKIT CONFIG ----
+  const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
+  const ROOM_NAME = "interview-room";
+  const AGENT_ID = "ab_3j6898gfhdj";
+
+  // IMPORTANT: paste a valid room token here from LiveKit UI
+  const LIVEKIT_TOKEN = "PASTE_YOUR_LIVEKIT_TOKEN_HERE";
+
+  // ---- DOM ----
   const startBtn = document.getElementById("startBtn");
   const endBtn = document.getElementById("endBtn");
   const muteBtn = document.getElementById("muteBtn");
@@ -195,12 +204,14 @@
   const linkedinUrlInput = document.getElementById("linkedinUrl");
   const notesBox = document.getElementById("notesBox");
 
+  let room = null;
+  let localAudioPub = null;
   let recognition = null;
   let transcriptLines = [];
   let faceModelsLoaded = false;
   let isMuted = false;
 
-  // CAMERA
+  // ---- CAMERA ----
   navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     .then(stream => {
       localVideo.srcObject = stream;
@@ -217,7 +228,7 @@
       statusEl.textContent = "Status: Camera error (check permissions)";
     });
 
-  // FACE MODELS
+  // ---- FACE MODELS ----
   async function loadFaceModels() {
     try {
       const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
@@ -298,7 +309,7 @@
     setInterval(analyzeVideoFrame, 1500);
   }
 
-  // SPEECH RECOGNITION (optional demo)
+  // ---- SPEECH RECOGNITION ----
   function setupSpeechRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
@@ -322,6 +333,7 @@
       if (finalText) {
         lastUtteranceInput.value = finalText;
         appendTranscript("You", finalText);
+        sendToAgent(finalText);
       }
     };
 
@@ -336,7 +348,83 @@
     transcriptLines.push({ speaker, text });
   }
 
-  // SUMMARY
+  // ---- LIVEKIT + AGENT ----
+  async function sendToAgent(text) {
+    try {
+      await fetch(`${LIVEKIT_URL.replace("wss://", "https://")}/agents/${AGENT_ID}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${LIVEKIT_TOKEN}`
+        },
+        body: JSON.stringify({ type: "message", text })
+      });
+    } catch (err) {
+      console.error("Agent send error:", err);
+    }
+  }
+
+  async function sendContextToAgent() {
+    const linkedin = linkedinUrlInput.value || "N/A";
+    const notes = notesBox.value || "N/A";
+
+    const contextText =
+      "You are a MOCK JOB INTERVIEW COACH.\n" +
+      "Your job is to:\n" +
+      "- Ask realistic job interview questions.\n" +
+      "- Tailor questions to the candidate’s résumé and LinkedIn.\n" +
+      "- Give coaching, feedback, and improvement tips.\n" +
+      "- Keep a supportive, professional tone.\n" +
+      "- Ask one question at a time.\n\n" +
+      "Candidate background:\n" +
+      `LinkedIn: ${linkedin}\n` +
+      `Résumé / notes:\n${notes}\n\n` +
+      "Begin the mock interview now.";
+
+    await sendToAgent(contextText);
+  }
+
+  async function connectRoom() {
+    const { Room, createLocalTracks } = await import("https://cdn.skypack.dev/livekit-client@1.16.4");
+
+    room = new Room();
+    await room.connect(LIVEKIT_URL, LIVEKIT_TOKEN);
+    statusEl.textContent = "Status: Connected";
+
+    // Only publish audio to LiveKit; video stays local
+    const localTracks = await createLocalTracks({
+      audio: true,
+      video: false
+    });
+
+    const audioTrack = localTracks.find(t => t.kind === "audio");
+    if (audioTrack) {
+      localAudioPub = await room.localParticipant.publishTrack(audioTrack);
+    }
+
+    room.on("trackSubscribed", (track) => {
+      if (track.kind === "audio") {
+        const audioEl = track.attach();
+        audioEl.play().catch(() => {});
+      }
+    });
+
+    room.on("participantConnected", (p) => {
+      statusEl.textContent = `Status: Connected — ${p.identity || "agent"} joined`;
+    });
+
+    room.on("disconnected", () => {
+      statusEl.textContent = "Status: Disconnected";
+    });
+  }
+
+  function disconnectRoom() {
+    if (room) room.disconnect();
+    room = null;
+    statusEl.textContent = "Status: Disconnected";
+  }
+
+  // ---- SUMMARY ----
   function generateSummary() {
     const total = transcriptLines.length;
     const you = transcriptLines.filter(l => l.speaker === "You").length;
@@ -354,10 +442,10 @@
       `Notes: ${notesBox.value || "N/A"}\n`;
 
     summaryBox.value =
-      `Mock Interview Summary (Demo):\n\n` +
+      `Mock Interview Summary:\n\n` +
       `Total transcript lines: ${total}\n` +
       `You: ${you}\n` +
-      `Coach (simulated): ${ai}\n\n` +
+      `Coach: ${ai}\n\n` +
       `Metrics:\n${metricsText}\n` +
       `Candidate context:\n${notesText}\n` +
       `Transcript (first lines):\n` +
@@ -375,30 +463,44 @@
     win.print();
   }
 
-  // BUTTONS
-  startBtn.onclick = () => {
+  // ---- BUTTONS ----
+  startBtn.onclick = async () => {
     startBtn.disabled = true;
-    startBtn.textContent = "Interview running (demo)";
-    endBtn.disabled = false;
-    muteBtn.disabled = false;
-    statusEl.textContent = "Status: Demo running (no server)";
+    startBtn.textContent = "Connecting...";
+
+    // unlock audio
+    const unlock = document.createElement("audio");
+    unlock.muted = true;
+    unlock.play().then(() => unlock.remove()).catch(() => {});
 
     recognition = setupSpeechRecognition();
     if (recognition) recognition.start();
+
+    try {
+      await connectRoom();
+      await sendContextToAgent();
+      statusEl.textContent = "Status: Connected (mock interview running)";
+    } catch (e) {
+      console.error("LiveKit connect error:", e);
+      statusEl.textContent = "Status: LiveKit connection failed (check token)";
+    }
+
+    endBtn.disabled = false;
+    muteBtn.disabled = false;
+    startBtn.textContent = "Interview running";
   };
 
   endBtn.onclick = () => {
     if (recognition) recognition.stop();
+    disconnectRoom();
     generateSummary();
     downloadPdfBtn.disabled = false;
-    statusEl.textContent = "Status: Demo ended";
   };
 
   muteBtn.onclick = () => {
-    if (!localVideo.srcObject) return;
+    if (!localAudioPub || !localAudioPub.track) return;
     isMuted = !isMuted;
-    const audioTracks = localVideo.srcObject.getAudioTracks();
-    audioTracks.forEach(t => t.enabled = !isMuted);
+    localAudioPub.track.muted = isMuted;
     muteBtn.textContent = isMuted ? "Unmute mic" : "Mute mic";
   };
 
