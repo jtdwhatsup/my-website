@@ -82,6 +82,12 @@
     <button id="downloadPdfBtn" disabled>Download Summary</button>
 
     <p id="status">Status: Disconnected</p>
+
+    <!-- ⭐ NEW METRICS -->
+    <p>Face engagement: <span id="faceEngagement">0%</span></p>
+    <p>Lighting: <span id="lightingScore">0%</span></p>
+    <p>Engagement signal: <span id="engagementSignal">0.00</span></p>
+    <p>Lighting balance: <span id="lightingBalance">0.00</span></p>
   </div>
 
   <div class="card">
@@ -120,6 +126,12 @@
   const summaryBox = document.getElementById("summaryBox");
   const statusEl = document.getElementById("status");
 
+  // NEW METRIC DOM
+  const faceEngagementEl = document.getElementById("faceEngagement");
+  const lightingScoreEl = document.getElementById("lightingScore");
+  const engagementSignalEl = document.getElementById("engagementSignal");
+  const lightingBalanceEl = document.getElementById("lightingBalance");
+
   let room = null;
   let localTrackPub = null;
   let recognition = null;
@@ -140,7 +152,7 @@
   // TOKEN (manual)
   // -----------------------------
   async function fetchToken(identity) {
-    return "PASTE_YOUR_TOKEN_HERE";
+    return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg3Nzc5NTYsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODY5MTU1Niwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJpbnRlcnZpZXctcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.Ksoa3T3cz3MeGGNvz7xVVuRPN8Tc-gpX76sG6yQn3Uo";
   }
 
   // -----------------------------
@@ -163,6 +175,23 @@
       console.error("Agent send error:", err);
     }
   }
+
+  // -----------------------------
+  // FAKE METRICS (emotions, lighting, engagement)
+  // -----------------------------
+  function updateFakeMetrics() {
+    const face = Math.floor(40 + Math.random() * 60);
+    const light = Math.floor(30 + Math.random() * 70);
+    const engage = (0.4 + Math.random() * 0.6).toFixed(2);
+    const balance = (0.3 + Math.random() * 0.7).toFixed(2);
+
+    faceEngagementEl.textContent = face + "%";
+    lightingScoreEl.textContent = light + "%";
+    engagementSignalEl.textContent = engage;
+    lightingBalanceEl.textContent = balance;
+  }
+
+  setInterval(updateFakeMetrics, 2000);
 
   // -----------------------------
   // SPEECH RECOGNITION
