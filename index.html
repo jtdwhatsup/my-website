@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Exit Interview Agent</title>
+  <title>Mock Interview Coach</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
@@ -86,21 +86,23 @@
       font-weight: 600;
     }
   </style>
+
+  <!-- Emotion detection -->
   <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
 
 <div class="app">
 
-  <!-- LEFT: Video + metrics -->
+  <!-- LEFT PANEL -->
   <div class="card">
-    <h2>Exit Interview Agent</h2>
+    <h2>Mock Interview Coach</h2>
     <p>Room: <b>interview-room</b></p>
 
     <video id="localVideo" autoplay playsinline muted></video>
     <canvas id="overlayCanvas"></canvas>
 
-    <button id="startBtn" class="primary">Start interview</button>
+    <button id="startBtn" class="primary">Start mock interview</button>
     <button id="endBtn" class="danger" disabled>End interview</button>
     <button id="muteBtn" disabled>Mute mic</button>
     <button id="downloadPdfBtn" disabled>Download PDF Summary</button>
@@ -131,7 +133,7 @@
     </div>
   </div>
 
-  <!-- MIDDLE: Transcript + summary -->
+  <!-- MIDDLE PANEL -->
   <div class="card">
     <h3>Live Transcript</h3>
     <div id="transcriptBox" class="transcript-box"></div>
@@ -143,38 +145,31 @@
     <textarea id="summaryBox" readonly>End the interview to generate summary.</textarea>
   </div>
 
-  <!-- RIGHT: Agent avatar + candidate context -->
+  <!-- RIGHT PANEL -->
   <div class="card">
     <div class="avatar">AI</div>
-    <h3>Agent</h3>
+    <h3>Mock Interview Coach</h3>
     <p style="font-size: 14px; color: #9ca3af;">
-      This agent conducts exit interviews, tracks engagement, and summarizes key themes.
+      This coach asks realistic job interview questions, adapts to your résumé, and gives feedback to help you improve.
     </p>
 
-    <h4>Candidate resume upload</h4>
+    <h4>Upload résumé</h4>
     <input type="file" id="resumeFile" accept=".pdf,.doc,.docx,.txt" />
-    <small style="color:#9ca3af;">(Optional, for your own notes only)</small>
 
     <h4 style="margin-top: 12px;">LinkedIn / profile URL</h4>
     <input type="url" id="linkedinUrl" placeholder="https://www.linkedin.com/in/..." />
 
-    <h4 style="margin-top: 12px;">Internal notes</h4>
-    <textarea id="notesBox" rows="6" placeholder="Paste resume text, LinkedIn summary, or notes here..."></textarea>
+    <h4 style="margin-top: 12px;">Notes / résumé text</h4>
+    <textarea id="notesBox" rows="6" placeholder="Paste résumé text, LinkedIn summary, or notes here..."></textarea>
   </div>
 
 </div>
 
 <script type="module">
-  // -----------------------------
-  // CONFIG
-  // -----------------------------
   const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
   const ROOM_NAME = "interview-room";
   const AGENT_ID = "ab_3j6898gfhdj";
 
-  // -----------------------------
-  // DOM
-  // -----------------------------
   const startBtn = document.getElementById("startBtn");
   const endBtn = document.getElementById("endBtn");
   const muteBtn = document.getElementById("muteBtn");
@@ -193,7 +188,6 @@
   const lightingBalanceEl = document.getElementById("lightingBalance");
   const emotionLabelEl = document.getElementById("emotionLabel");
 
-  const resumeFileInput = document.getElementById("resumeFile");
   const linkedinUrlInput = document.getElementById("linkedinUrl");
   const notesBox = document.getElementById("notesBox");
 
@@ -204,34 +198,20 @@
   let isMuted = false;
   let faceModelsLoaded = false;
 
-  // -----------------------------
-  // CAMERA AUTO-START
-  // -----------------------------
   navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     .then(stream => {
       localVideo.srcObject = stream;
       localVideo.play();
-      setupOverlayCanvas();
+      overlayCanvas.width = localVideo.clientWidth;
+      overlayCanvas.height = localVideo.clientHeight;
       loadFaceModels();
       startVideoAnalysisLoop();
-    })
-    .catch(err => console.error("Camera error:", err));
+    });
 
-  function setupOverlayCanvas() {
-    overlayCanvas.width = localVideo.clientWidth;
-    overlayCanvas.height = localVideo.clientHeight;
-  }
-
-  // -----------------------------
-  // TOKEN (manual)
-  // -----------------------------
   async function fetchToken(identity) {
     return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg3ODY5NzUsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODcwMDU3NSwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJpbnRlcnZpZXctcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.QaHrwdJDljn1o8brokaSNcrlzT2Nyjz-MAZdv8zLOKI";
   }
 
-  // -----------------------------
-  // SEND TO AGENT
-  // -----------------------------
   async function sendToAgent(text) {
     try {
       await fetch(`https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/${AGENT_ID}/messages`, {
@@ -240,10 +220,7 @@
           "Content-Type": "application/json",
           "Authorization": `Bearer ${await fetchToken("Student")}`
         },
-        body: JSON.stringify({
-          type: "message",
-          text
-        })
+        body: JSON.stringify({ type: "message", text })
       });
     } catch (err) {
       console.error("Agent send error:", err);
@@ -253,29 +230,31 @@
   async function sendContextToAgent() {
     const linkedin = linkedinUrlInput.value || "N/A";
     const notes = notesBox.value || "N/A";
+
     const contextText =
-      "Context for this exit interview:\n" +
-      `LinkedIn/profile URL: ${linkedin}\n` +
-      `Resume/notes:\n${notes}\n\n` +
-      "Use this information to personalize your questions to the candidate's background and experience.";
+      "You are a MOCK JOB INTERVIEW COACH.\n" +
+      "Your job is to:\n" +
+      "- Ask realistic job interview questions.\n" +
+      "- Tailor questions to the candidate’s résumé and LinkedIn.\n" +
+      "- Give coaching, feedback, and improvement tips.\n" +
+      "- Keep a supportive, professional tone.\n" +
+      "- Ask one question at a time.\n\n" +
+      "Candidate background:\n" +
+      `LinkedIn: ${linkedin}\n` +
+      `Résumé / notes:\n${notes}\n\n` +
+      "Begin the mock interview now.";
+
     await sendToAgent(contextText);
   }
 
-  // -----------------------------
-  // FACE / EMOTION / LIGHTING ANALYSIS
-  // -----------------------------
   async function loadFaceModels() {
-    try {
-      const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
-      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-      await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
-      faceModelsLoaded = true;
-    } catch (e) {
-      console.error("Error loading face-api models:", e);
-    }
+    const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+    faceModelsLoaded = true;
   }
 
-  function estimateLightingFromFrame(video) {
+  function estimateLighting(video) {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     canvas.width = 160;
@@ -284,13 +263,9 @@
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
     let total = 0;
     for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      total += (r + g + b) / 3;
+      total += (data[i] + data[i+1] + data[i+2]) / 3;
     }
-    const avg = total / (data.length / 4);
-    return Math.min(100, Math.max(0, (avg / 255) * 100));
+    return Math.min(100, Math.max(0, (total / (data.length / 4)) / 255 * 100));
   }
 
   async function analyzeVideoFrame() {
@@ -307,7 +282,7 @@
         .detectAllFaces(localVideo, new faceapi.TinyFaceDetectorOptions())
         .withFaceExpressions();
 
-      if (detections && detections.length > 0) {
+      if (detections.length > 0) {
         const resized = faceapi.resizeResults(detections, {
           width: overlayCanvas.width,
           height: overlayCanvas.height
@@ -334,24 +309,20 @@
       }
     }
 
-    const lighting = estimateLightingFromFrame(localVideo);
+    const lighting = estimateLighting(localVideo);
     const engagementSignal = (faceScore / 100 * 0.6 + lighting / 100 * 0.4).toFixed(2);
-    const lightingBalance = (lighting / 100).toFixed(2);
 
     emotionLabelEl.textContent = dominantEmotion;
     faceEngagementEl.textContent = faceScore;
     lightingScoreEl.textContent = Math.round(lighting);
     engagementSignalEl.textContent = engagementSignal;
-    lightingBalanceEl.textContent = lightingBalance;
+    lightingBalanceEl.textContent = (lighting / 100).toFixed(2);
   }
 
   function startVideoAnalysisLoop() {
     setInterval(analyzeVideoFrame, 1500);
   }
 
-  // -----------------------------
-  // SPEECH RECOGNITION
-  // -----------------------------
   function setupSpeechRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
@@ -390,9 +361,6 @@
     transcriptLines.push({ speaker, text });
   }
 
-  // -----------------------------
-  // LIVEKIT CONNECTION
-  // -----------------------------
   async function connectRoom() {
     const { Room, createLocalTracks } = await import("https://cdn.skypack.dev/livekit-client@1.16.4");
 
@@ -437,9 +405,6 @@
     statusEl.textContent = "Status: Disconnected";
   }
 
-  // -----------------------------
-  // SUMMARY + PDF EXPORT
-  // -----------------------------
   function generateSummary() {
     if (!transcriptLines.length) {
       summaryBox.value = "No transcript captured.";
@@ -462,10 +427,10 @@
       `Notes: ${notesBox.value || "N/A"}\n`;
 
     summaryBox.value =
-      `Summary:\n\n` +
+      `Mock Interview Summary:\n\n` +
       `Total lines: ${total}\n` +
       `You: ${you}\n` +
-      `Agent: ${ai}\n\n` +
+      `Coach: ${ai}\n\n` +
       `Metrics:\n${metricsText}\n` +
       `Candidate context:\n${notesText}\n` +
       `Transcript (first lines):\n` +
@@ -483,9 +448,6 @@
     win.print();
   }
 
-  // -----------------------------
-  // BUTTONS
-  // -----------------------------
   startBtn.onclick = async () => {
     startBtn.disabled = true;
     startBtn.textContent = "Connecting...";
@@ -494,7 +456,7 @@
     if (recognition) recognition.start();
 
     await connectRoom();
-    await sendContextToAgent(); // send resume/LinkedIn context once at start
+    await sendContextToAgent();
 
     endBtn.disabled = false;
     muteBtn.disabled = false;
