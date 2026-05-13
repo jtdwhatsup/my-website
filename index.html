@@ -179,8 +179,8 @@
   const ROOM_NAME = "interview-room";
   const AGENT_ID = "ab_3j6898gfhdj";
 
-  // IMPORTANT: paste a valid room token here from LiveKit UI
-  const LIVEKIT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg3OTE5ODEsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODcwNTU4MSwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJpbnRlcnZpZXctcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.8ur02Mxf_9l3xKOyKhE4X0YfumXkxYm0wuTRNzyc5e4";
+  // IMPORTANT: paste a valid room token from LiveKit UI here
+  const LIVEKIT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE4MTAyNDI2MzUsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSTN3VW52UEYzaHhaNyIsIm5iZiI6MTc3ODcwNjYzNSwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJpbnRlcnZpZXctcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.zmA159azNoxmBGFZ9hR5roPI-RI77jFx7Mela-0u0Ts";
 
   // ---- DOM ----
   const startBtn = document.getElementById("startBtn");
@@ -402,10 +402,12 @@
       localAudioPub = await room.localParticipant.publishTrack(audioTrack);
     }
 
-    room.on("trackSubscribed", (track) => {
+    room.on("trackSubscribed", (track, publication, participant) => {
       if (track.kind === "audio") {
         const audioEl = track.attach();
-        audioEl.play().catch(() => {});
+        audioEl.autoplay = true;
+        audioEl.muted = false;
+        audioEl.play().catch(err => console.error("Audio play blocked:", err));
       }
     });
 
@@ -509,3 +511,4 @@
 
 </body>
 </html>
+
