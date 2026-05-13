@@ -86,7 +86,6 @@
       font-weight: 600;
     }
   </style>
-  <!-- face-api.js for basic emotion detection -->
   <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
@@ -227,7 +226,7 @@
   // TOKEN (manual)
   // -----------------------------
   async function fetchToken(identity) {
-    return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg3Nzc5NTYsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODY5MTU1Niwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJpbnRlcnZpZXctcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.Ksoa3T3cz3MeGGNvz7xVVuRPN8Tc-gpX76sG6yQn3Uo";
+    return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg3ODY5NzUsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODcwMDU3NSwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJpbnRlcnZpZXctcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.QaHrwdJDljn1o8brokaSNcrlzT2Nyjz-MAZdv8zLOKI";
   }
 
   // -----------------------------
@@ -249,6 +248,17 @@
     } catch (err) {
       console.error("Agent send error:", err);
     }
+  }
+
+  async function sendContextToAgent() {
+    const linkedin = linkedinUrlInput.value || "N/A";
+    const notes = notesBox.value || "N/A";
+    const contextText =
+      "Context for this exit interview:\n" +
+      `LinkedIn/profile URL: ${linkedin}\n` +
+      `Resume/notes:\n${notes}\n\n` +
+      "Use this information to personalize your questions to the candidate's background and experience.";
+    await sendToAgent(contextText);
   }
 
   // -----------------------------
@@ -484,6 +494,7 @@
     if (recognition) recognition.start();
 
     await connectRoom();
+    await sendContextToAgent(); // send resume/LinkedIn context once at start
 
     endBtn.disabled = false;
     muteBtn.disabled = false;
