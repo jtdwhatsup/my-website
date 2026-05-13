@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Mock Interview Coach</title>
+  <title>Mock Interview Coach (Demo)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
@@ -25,11 +25,19 @@
       border-radius: 12px;
       padding: 16px;
     }
-    video, canvas {
+    video {
       width: 100%;
       border-radius: 12px;
       background: black;
       display: block;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      width: 100%;
+      height: 100%;
     }
     button {
       padding: 8px 14px;
@@ -92,19 +100,22 @@
 
 <div class="app">
 
+  <!-- LEFT: video + controls + metrics -->
   <div class="card">
     <h2>Mock Interview Coach</h2>
-    <p>Room: <b>interview-room</b></p>
+    <p>Room: <b>interview-room</b> (demo)</p>
 
-    <video id="localVideo" autoplay playsinline muted></video>
-    <canvas id="overlayCanvas"></canvas>
+    <div style="position: relative;">
+      <video id="localVideo" autoplay playsinline muted></video>
+      <canvas id="overlayCanvas"></canvas>
+    </div>
 
     <button id="startBtn" class="primary">Start mock interview</button>
     <button id="endBtn" class="danger" disabled>End interview</button>
     <button id="muteBtn" disabled>Mute mic</button>
     <button id="downloadPdfBtn" disabled>Download PDF Summary</button>
 
-    <p id="status">Status: Disconnected</p>
+    <p id="status">Status: Demo (no server connection)</p>
 
     <div style="margin-top: 10px;">
       <div>
@@ -130,6 +141,7 @@
     </div>
   </div>
 
+  <!-- MIDDLE: transcript + summary -->
   <div class="card">
     <h3>Live Transcript</h3>
     <div id="transcriptBox" class="transcript-box"></div>
@@ -141,6 +153,7 @@
     <textarea id="summaryBox" readonly>End the interview to generate summary.</textarea>
   </div>
 
+  <!-- RIGHT: coach + resume/linkedin -->
   <div class="card">
     <div class="avatar">AI</div>
     <h3>Mock Interview Coach</h3>
@@ -161,10 +174,6 @@
 </div>
 
 <script type="module">
-  const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
-  const ROOM_NAME = "interview-room";
-  const AGENT_ID = "ab_3j6898gfhdj";
-
   const startBtn = document.getElementById("startBtn");
   const endBtn = document.getElementById("endBtn");
   const muteBtn = document.getElementById("muteBtn");
@@ -186,35 +195,215 @@
   const linkedinUrlInput = document.getElementById("linkedinUrl");
   const notesBox = document.getElementById("notesBox");
 
-  let room = null;
-  let localTrackPub = null;
   let recognition = null;
   let transcriptLines = [];
-  let isMuted = false;
   let faceModelsLoaded = false;
+  let isMuted = false;
 
+  // CAMERA
   navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     .then(stream => {
       localVideo.srcObject = stream;
       localVideo.play();
-      overlayCanvas.width = localVideo.clientWidth;
-      overlayCanvas.height = localVideo.clientHeight;
+      localVideo.onloadedmetadata = () => {
+        overlayCanvas.width = localVideo.videoWidth;
+        overlayCanvas.height = localVideo.videoHeight;
+      };
       loadFaceModels();
       startVideoAnalysisLoop();
+    })
+    .catch(err => {
+      console.error("Camera error:", err);
+      statusEl.textContent = "Status: Camera error (check permissions)";
     });
 
-  async function fetchToken(identity) {
-    return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg3OTAyNTAsImlkZW50aXR5IjoiU3R1ZGVudCAiLCJpc3MiOiJBUElmeWh3a0xoSkhLalgiLCJuYmYiOjE3Nzg3MDM4NTAsInN1YiI6IlN0dWRlbnQgIiwidmlkZW8iOnsiY2FuUHVibGlzaCI6dHJ1ZSwiY2FuUHVibGlzaERhdGEiOnRydWUsImNhblN1YnNjcmliZSI6dHJ1ZSwicm9vbSI6ImludGVydmlldy1yb29tIiwicm9vbUpvaW4iOnRydWV9fQ.IKvY1gYE08Zk_ES5EPxZQxQiSD-pdZp7XqrMGWB0wXk";
+  // FACE MODELS
+  async function loadFaceModels() {
+    try {
+      const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+      faceModelsLoaded = true;
+    } catch (e) {
+      console.error("Error loading face-api models:", e);
+    }
   }
 
-  async function sendToAgent(text) {
-    try {
-      await fetch(`https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/${AGENT_ID}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${await fetchToken("Student")}`
-        },
-        body: JSON.stringify({ type: "message", text })
-      });
-    } catch (err) {
+  function estimateLighting(video) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = 160;
+    canvas.height = 120;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let total = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      total += (data[i] + data[i+1] + data[i+2]) / 3;
+    }
+    return Math.min(100, Math.max(0, (total / (data.length / 4)) / 255 * 100));
+  }
+
+  async function analyzeVideoFrame() {
+    if (!localVideo || localVideo.readyState < 2) return;
+
+    const ctx = overlayCanvas.getContext("2d");
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+    let faceScore = 0;
+    let dominantEmotion = "N/A";
+
+    if (faceModelsLoaded) {
+      const detections = await faceapi
+        .detectAllFaces(localVideo, new faceapi.TinyFaceDetectorOptions())
+        .withFaceExpressions();
+
+      if (detections.length > 0) {
+        const resized = faceapi.resizeResults(detections, {
+          width: overlayCanvas.width,
+          height: overlayCanvas.height
+        });
+
+        resized.forEach(det => {
+          const box = det.detection.box;
+          ctx.strokeStyle = "#4f46e5";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+          const expr = det.expressions;
+          let maxVal = 0;
+          let maxKey = "neutral";
+          for (const k in expr) {
+            if (expr[k] > maxVal) {
+              maxVal = expr[k];
+              maxKey = k;
+            }
+          }
+          dominantEmotion = maxKey;
+          faceScore = Math.round(maxVal * 100);
+        });
+      }
+    }
+
+    const lighting = estimateLighting(localVideo);
+    const engagementSignal = (faceScore / 100 * 0.6 + lighting / 100 * 0.4).toFixed(2);
+
+    emotionLabelEl.textContent = dominantEmotion;
+    faceEngagementEl.textContent = faceScore;
+    lightingScoreEl.textContent = Math.round(lighting);
+    engagementSignalEl.textContent = engagementSignal;
+    lightingBalanceEl.textContent = (lighting / 100).toFixed(2);
+  }
+
+  function startVideoAnalysisLoop() {
+    setInterval(analyzeVideoFrame, 1500);
+  }
+
+  // SPEECH RECOGNITION (optional demo)
+  function setupSpeechRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+
+    rec.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        if (res.isFinal) finalText += res[0].transcript;
+        else interimText += res[0].transcript;
+      }
+
+      if (interimText) lastUtteranceInput.value = interimText;
+      if (finalText) {
+        lastUtteranceInput.value = finalText;
+        appendTranscript("You", finalText);
+      }
+    };
+
+    return rec;
+  }
+
+  function appendTranscript(speaker, text) {
+    const div = document.createElement("div");
+    div.textContent = speaker + ": " + text;
+    transcriptBox.appendChild(div);
+    transcriptBox.scrollTop = transcriptBox.scrollHeight;
+    transcriptLines.push({ speaker, text });
+  }
+
+  // SUMMARY
+  function generateSummary() {
+    const total = transcriptLines.length;
+    const you = transcriptLines.filter(l => l.speaker === "You").length;
+    const ai = total - you;
+
+    const metricsText =
+      `Emotion: ${emotionLabelEl.textContent}\n` +
+      `Face engagement: ${faceEngagementEl.textContent}%\n` +
+      `Lighting: ${lightingScoreEl.textContent}%\n` +
+      `Engagement signal: ${engagementSignalEl.textContent}\n` +
+      `Lighting balance: ${lightingBalanceEl.textContent}\n`;
+
+    const notesText =
+      `LinkedIn: ${linkedinUrlInput.value || "N/A"}\n` +
+      `Notes: ${notesBox.value || "N/A"}\n`;
+
+    summaryBox.value =
+      `Mock Interview Summary (Demo):\n\n` +
+      `Total transcript lines: ${total}\n` +
+      `You: ${you}\n` +
+      `Coach (simulated): ${ai}\n\n` +
+      `Metrics:\n${metricsText}\n` +
+      `Candidate context:\n${notesText}\n` +
+      `Transcript (first lines):\n` +
+      (total ? transcriptLines.slice(0, 5).map(l => `${l.speaker}: ${l.text}`).join("\n") : "No transcript captured.") +
+      (total ? `\n\nTranscript (last lines):\n` +
+      transcriptLines.slice(-5).map(l => `${l.speaker}: ${l.text}`).join("\n") : "");
+  }
+
+  function downloadPdfSummary() {
+    const text = summaryBox.value || "No summary.";
+    const win = window.open("", "_blank");
+    win.document.write("<pre>" + text.replace(/</g, "&lt;") + "</pre>");
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
+  // BUTTONS
+  startBtn.onclick = () => {
+    startBtn.disabled = true;
+    startBtn.textContent = "Interview running (demo)";
+    endBtn.disabled = false;
+    muteBtn.disabled = false;
+    statusEl.textContent = "Status: Demo running (no server)";
+
+    recognition = setupSpeechRecognition();
+    if (recognition) recognition.start();
+  };
+
+  endBtn.onclick = () => {
+    if (recognition) recognition.stop();
+    generateSummary();
+    downloadPdfBtn.disabled = false;
+    statusEl.textContent = "Status: Demo ended";
+  };
+
+  muteBtn.onclick = () => {
+    if (!localVideo.srcObject) return;
+    isMuted = !isMuted;
+    const audioTracks = localVideo.srcObject.getAudioTracks();
+    audioTracks.forEach(t => t.enabled = !isMuted);
+    muteBtn.textContent = isMuted ? "Unmute mic" : "Mute mic";
+  };
+
+  downloadPdfBtn.onclick = downloadPdfSummary;
+</script>
+
+</body>
+</html>
