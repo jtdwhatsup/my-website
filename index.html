@@ -2,74 +2,901 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>AI Interviewer</title>
+  <title>Exit Interview Agent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
+    :root {
+      --bg: #05060a;
+      --bg-elevated: #101320;
+      --accent: #4f46e5;
+      --accent-soft: rgba(79, 70, 229, 0.2);
+      --accent-danger: #ef4444;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --border: #1f2933;
+      --good: #22c55e;
+      --warn: #eab308;
+      --bad: #ef4444;
+      --card-radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
     body {
       margin: 0;
-      padding: 0;
-      background: #0d0f12;
-      font-family: Arial, sans-serif;
-      color: #E5E9F0;
+      background: radial-gradient(circle at top, #111827 0, #020617 55%, #000 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 1.4fr 1.1fr;
+      gap: 18px;
+      padding: 18px;
+      width: 100%;
+      max-width: 1320px;
+    }
+
+    .card {
+      background: radial-gradient(circle at top left, #111827 0, #020617 55%);
+      border-radius: var(--card-radius);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.9);
+      padding: 14px 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: -40%;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(79, 70, 229, 0.16), transparent 55%),
+        radial-gradient(circle at 100% 0%, rgba(56, 189, 248, 0.12), transparent 55%);
+      opacity: 0.7;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h1 span.badge {
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    h2 {
+      font-size: 1.05rem;
+      margin-bottom: 6px;
+    }
+
+    .sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .col {
+      flex: 1;
       display: flex;
       flex-direction: column;
-      align-items: center;
+      gap: 10px;
     }
 
-    #videoContainer {
-      margin-top: 20px;
-    }
-
-    video {
-      width: 700px;
-      border-radius: 10px;
-      border: 2px solid #222;
-    }
-
-    #transcriptBox {
-      width: 700px;
-      height: 250px;
-      background: #111418;
-      border-radius: 10px;
-      padding: 15px;
-      margin-top: 20px;
-      overflow-y: auto;
-      font-size: 15px;
-      line-height: 1.5;
-      border: 1px solid #222;
-      white-space: pre-wrap;
-    }
-
-    #resumeInput {
-      width: 700px;
-      height: 150px;
-      margin-top: 20px;
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid #333;
-      background: #1a1d21;
-      color: #E5E9F0;
-      resize: none;
-      font-size: 14px;
-    }
-
-    #controls {
-      margin-top: 20px;
+    .controls {
       display: flex;
-      gap: 20px;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
     }
 
     button {
-      padding: 12px 25px;
-      border-radius: 8px;
-      border: none;
-      font-size: 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text);
+      padding: 7px 14px;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       cursor: pointer;
-      background: #3a82f7;
-      color: white;
+      transition: all 0.15s ease;
     }
 
-    button:hover {
-      background: #1f6ae0;
+    button.primary {
+      background: linear-gradient(135deg, #4f46e5, #06b6d4);
+      border-color: transparent;
+      box-shadow: 0 10px 25px rgba(37, 99, 235, 0.5);
+    }
+
+    button.danger {
+      background: rgba(127, 29, 29, 0.9);
+      border-color: rgba(248, 113, 113, 0.7);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.9);
+    }
+
+    .pill {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--bad);
+      box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.25);
+    }
+
+    .pill-dot.ok {
+      background: var(--good);
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.25);
+    }
+
+    .pill-dot.warn {
+      background: var(--warn);
+      box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.25);
+    }
+
+    .video-shell {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: radial-gradient(circle at top, #020617 0, #000 70%);
+      min-height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #020617;
+    }
+
+    .video-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 8px;
+      font-size: 0.7rem;
+    }
+
+    .video-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .video-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 6px;
+    }
+
+    .metric-chip {
+      background: rgba(15, 23, 42, 0.85);
+      border-radius: 999px;
+      padding: 3px 8px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+    }
+
+    .metric-value {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .meter-bar {
+      position: relative;
+      width: 100%;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      overflow: hidden;
+      margin-top: 3px;
+    }
+
+    .meter-fill {
+      position: absolute;
+      inset: 0;
+      width: 40%;
+      background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
+      transform-origin: left;
+      transform: scaleX(0.3);
+      transition: transform 0.15s linear;
+    }
+
+    textarea, input {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text);
+      padding: 7px 9px;
+      font-size: 0.8rem;
+      resize: vertical;
+      min-height: 70px;
+    }
+
+    textarea:focus, input:focus {
+      outline: 1px solid rgba(56, 189, 248, 0.7);
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4);
+    }
+
+    .small-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+
+    .transcript-box {
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      padding: 8px;
+      font-size: 0.78rem;
+      max-height: 260px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .transcript-line {
+      margin-bottom: 4px;
+    }
+
+    .transcript-speaker {
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 6px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      margin-right: 4px;
+      background: var(--bad);
+      box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.25);
+    }
+
+    .status-dot.ok {
+      background: var(--good);
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.25);
+    }
+
+    .status-dot.warn {
+      background: var(--warn);
+      box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.25);
+    }
+
+    .summary-box {
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      padding: 8px;
+      font-size: 0.78rem;
+      min-height: 80px;
+      white-space: pre-wrap;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .tag {
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      color: var(--muted);
+    }
+
+    @media (max-width: 960px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
+<body>
+<div class="app">
+  <!-- LEFT: Video + Controls + Resume -->
+  <div class="col">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div>
+          <h1>
+            Exit Interview Agent
+            <span class="badge">LiveKit · Browser STT</span>
+          </h1>
+          <div class="sub">Room: <code>interview-room</code> · Project: <code>exit-interview-agent-1lo01a7d.livekit.cloud</code></div>
+        </div>
+        <div class="pill" id="connection-pill">
+          <span class="pill-dot" id="connection-dot"></span>
+          <span id="connection-text">Disconnected</span>
+        </div>
+      </div>
+
+      <div class="video-shell">
+        <video id="localVideo" autoplay playsinline muted></video>
+        <div class="video-overlay">
+          <div class="video-top">
+            <div class="metric-chip">
+              Face engagement
+              <span class="metric-value" id="engagement-score">0%</span>
+            </div>
+            <div class="metric-chip">
+              Lighting
+              <span class="metric-value" id="lighting-score">0%</span>
+            </div>
+          </div>
+          <div class="video-bottom">
+            <div style="flex:1;max-width:55%;">
+              <div class="small-label">Engagement signal</div>
+              <div class="meter-bar">
+                <div class="meter-fill" id="engagement-meter"></div>
+              </div>
+            </div>
+            <div style="flex:1;max-width:40%;">
+              <div class="small-label">Lighting balance</div>
+              <div class="meter-bar">
+                <div class="meter-fill" id="lighting-meter"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" class="primary">
+          ▶ Start interview
+        </button>
+        <button id="endBtn" class="danger" disabled>
+          ■ End interview
+        </button>
+        <button id="muteBtn" disabled>
+          🔇 Mute mic
+        </button>
+        <button id="downloadPdfBtn" disabled>
+          ⬇ Download PDF summary
+        </button>
+      </div>
+
+      <div class="status-row">
+        <div>
+          <span class="status-dot" id="mic-dot"></span>
+          <span id="mic-status">Mic idle</span>
+        </div>
+        <div>
+          <span class="status-dot" id="agent-dot"></span>
+          <span id="agent-status">Agent idle</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Candidate context</h2>
+      <div class="sub">Paste resume or notes so the agent has context (not sent automatically).</div>
+      <div style="margin-top:6px;">
+        <div class="small-label">Resume / background</div>
+        <textarea id="resumeInput" placeholder="Paste resume, LinkedIn summary, or background notes here..."></textarea>
+      </div>
+      <div class="tag-row">
+        <span class="tag">Not auto-sent</span>
+        <span class="tag">You can read from this</span>
+        <span class="tag">Useful for your own notes</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Transcript + Summary -->
+  <div class="col">
+    <div class="card">
+      <h2>Live transcript</h2>
+      <div class="sub">AI + You · Browser STT · Agent audio</div>
+      <div style="margin-top:6px;">
+        <div class="transcript-box" id="transcriptBox"></div>
+      </div>
+      <div style="margin-top:6px;">
+        <div class="small-label">Last recognized phrase (you)</div>
+        <input id="lastUtterance" readonly placeholder="Your speech will appear here..." />
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Summary & export</h2>
+      <div class="sub">Quick recap + PDF snapshot of transcript and metrics.</div>
+      <div style="margin-top:6px;">
+        <div class="small-label">Auto summary (local, simple)</div>
+        <div class="summary-box" id="summaryBox">
+          End the interview to generate a quick summary here.
+        </div>
+      </div>
+      <div class="tag-row">
+        <span class="tag">Local summary</span>
+        <span class="tag">Transcript-based</span>
+        <span class="tag">PDF snapshot only</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  // ---- CONFIG (safe in browser) ----
+  const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
+  const LIVEKIT_API_KEY = "APIfyhwkLhJHKjX";
+  const ROOM_NAME = "interview-room";
+  const AGENT_ID = "ab_3j6898gfhdj";
+
+  // ---- DOM ----
+  const startBtn = document.getElementById("startBtn");
+  const endBtn = document.getElementById("endBtn");
+  const muteBtn = document.getElementById("muteBtn");
+  const downloadPdfBtn = document.getElementById("downloadPdfBtn");
+
+  const connectionDot = document.getElementById("connection-dot");
+  const connectionText = document.getElementById("connection-text");
+  const micDot = document.getElementById("mic-dot");
+  const micStatus = document.getElementById("mic-status");
+  const agentDot = document.getElementById("agent-dot");
+  const agentStatus = document.getElementById("agent-status");
+
+  const localVideo = document.getElementById("localVideo");
+  const transcriptBox = document.getElementById("transcriptBox");
+  const lastUtteranceInput = document.getElementById("lastUtterance");
+  const summaryBox = document.getElementById("summaryBox");
+
+  const engagementScoreEl = document.getElementById("engagement-score");
+  const lightingScoreEl = document.getElementById("lighting-score");
+  const engagementMeter = document.getElementById("engagement-meter");
+  const lightingMeter = document.getElementById("lighting-meter");
+
+  const resumeInput = document.getElementById("resumeInput");
+
+  // ---- State ----
+  let room = null;
+  let localTrackPub = null;
+  let isMuted = false;
+  let recognition = null;
+  let recognizing = false;
+  let transcriptLines = [];
+  let engagementInterval = null;
+  let lightingInterval = null;
+
+  // ---- Helpers ----
+  function appendTranscript(speaker, text) {
+    if (!text || !text.trim()) return;
+    const line = { speaker, text: text.trim() };
+    transcriptLines.push(line);
+
+    const div = document.createElement("div");
+    div.className = "transcript-line";
+    const speakerSpan = document.createElement("span");
+    speakerSpan.className = "transcript-speaker";
+    speakerSpan.textContent = speaker + ": ";
+    const textSpan = document.createElement("span");
+    textSpan.textContent = line.text;
+    div.appendChild(speakerSpan);
+    div.appendChild(textSpan);
+    transcriptBox.appendChild(div);
+    transcriptBox.scrollTop = transcriptBox.scrollHeight;
+  }
+
+  function setConnectionStatus(connected) {
+    if (connected) {
+      connectionDot.classList.remove("warn");
+      connectionDot.classList.add("ok");
+      connectionText.textContent = "Connected";
+    } else {
+      connectionDot.classList.remove("ok");
+      connectionDot.classList.remove("warn");
+      connectionText.textContent = "Disconnected";
+    }
+  }
+
+  function setMicStatus(active) {
+    if (active) {
+      micDot.classList.add("ok");
+      micDot.classList.remove("warn");
+      micStatus.textContent = "Mic listening (browser STT)";
+    } else {
+      micDot.classList.remove("ok");
+      micDot.classList.remove("warn");
+      micStatus.textContent = "Mic idle";
+    }
+  }
+
+  function setAgentStatus(active) {
+    if (active) {
+      agentDot.classList.add("ok");
+      agentDot.classList.remove("warn");
+      agentStatus.textContent = "Agent active";
+    } else {
+      agentDot.classList.remove("ok");
+      agentDot.classList.remove("warn");
+      agentStatus.textContent = "Agent idle";
+    }
+  }
+
+  function setEngagement(value) {
+    const clamped = Math.max(0, Math.min(100, value));
+    engagementScoreEl.textContent = clamped.toFixed(0) + "%";
+    engagementMeter.style.transform = "scaleX(" + (clamped / 100) + ")";
+  }
+
+  function setLighting(value) {
+    const clamped = Math.max(0, Math.min(100, value));
+    lightingScoreEl.textContent = clamped.toFixed(0) + "%";
+    lightingMeter.style.transform = "scaleX(" + (clamped / 100) + ")";
+  }
+
+  function randomWalk(prev, step = 8) {
+    const delta = (Math.random() - 0.5) * step;
+    let next = prev + delta;
+    if (next < 5) next = 5;
+    if (next > 98) next = 98;
+    return next;
+  }
+
+  function startFakeMetrics() {
+    let e = 55;
+    let l = 60;
+    setEngagement(e);
+    setLighting(l);
+    engagementInterval = setInterval(() => {
+      e = randomWalk(e, 10);
+      setEngagement(e);
+    }, 1200);
+    lightingInterval = setInterval(() => {
+      l = randomWalk(l, 6);
+      setLighting(l);
+    }, 1500);
+  }
+
+  function stopFakeMetrics() {
+    if (engagementInterval) clearInterval(engagementInterval);
+    if (lightingInterval) clearInterval(lightingInterval);
+    engagementInterval = null;
+    lightingInterval = null;
+    setEngagement(0);
+    setLighting(0);
+  }
+
+  // ---- Browser STT ----
+  function setupSpeechRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      micStatus.textContent = "SpeechRecognition not supported in this browser.";
+      micDot.classList.add("warn");
+      return null;
+    }
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+
+    rec.onstart = () => {
+      recognizing = true;
+      setMicStatus(true);
+    };
+
+    rec.onerror = (e) => {
+      console.warn("SpeechRecognition error", e);
+      micDot.classList.add("warn");
+      micStatus.textContent = "Mic error: " + (e.error || "unknown");
+    };
+
+    rec.onend = () => {
+      recognizing = false;
+      setMicStatus(false);
+      // Auto-restart while interview is active
+      if (room && room.state === "connected") {
+        try {
+          rec.start();
+        } catch (_) {}
+      }
+    };
+
+    rec.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        if (res.isFinal) {
+          finalText += res[0].transcript;
+        } else {
+          interimText += res[0].transcript;
+        }
+      }
+      if (interimText) {
+        lastUtteranceInput.value = interimText;
+      }
+      if (finalText) {
+        lastUtteranceInput.value = finalText;
+        appendTranscript("You", finalText);
+        // Here is where you'd send text to the agent via your backend or LiveKit agent API.
+        // For now we just log it.
+        console.log("User said:", finalText);
+      }
+    };
+
+    return rec;
+  }
+
+  // ---- LiveKit client (token via backend recommended; here we use a simple demo fetch) ----
+  async function fetchToken(identity) {
+    // In production, you MUST generate this token on a backend using your API secret.
+    // Here we assume you have a small backend at /token that returns a token for the room.
+    // If you don't, this will fail — but the rest of the UI still works for now.
+    const url = `/token?identity=${encodeURIComponent(identity)}&room=${encodeURIComponent(ROOM_NAME)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to fetch token");
+    const { token } = await res.json();
+    return token;
+  }
+
+  async function connectRoom() {
+    const { Room, createLocalTracks } = await import("https://cdn.skypack.dev/livekit-client@1.16.4");
+
+    const identity = "candidate-" + Math.floor(Math.random() * 1e6);
+    let token;
+    try {
+      token = await fetchToken(identity);
+    } catch (e) {
+      console.warn("Token fetch failed (you need a backend at /token). UI will still run.", e);
+      throw e;
+    }
+
+    room = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+    });
+
+    room
+      .on("connected", () => {
+        setConnectionStatus(true);
+        setAgentStatus(true);
+      })
+      .on("disconnected", () => {
+        setConnectionStatus(false);
+        setAgentStatus(false);
+      })
+      .on("trackSubscribed", (track, pub, participant) => {
+        if (track.kind === "audio") {
+          const audioEl = track.attach();
+          audioEl.play().catch(() => {});
+        }
+      });
+
+    await room.connect(LIVEKIT_URL, token);
+
+    const localTracks = await createLocalTracks({
+      audio: true,
+      video: { facingMode: "user" },
+    });
+
+    const videoTrack = localTracks.find((t) => t.kind === "video");
+    const audioTrack = localTracks.find((t) => t.kind === "audio");
+
+    if (videoTrack) {
+      const el = videoTrack.attach();
+      el.muted = true;
+      localVideo.srcObject = el.srcObject;
+      await room.localParticipant.publishTrack(videoTrack);
+    }
+
+    if (audioTrack) {
+      localTrackPub = await room.localParticipant.publishTrack(audioTrack);
+    }
+
+    return room;
+  }
+
+  function disconnectRoom() {
+    if (room) {
+      room.disconnect();
+      room = null;
+    }
+    setConnectionStatus(false);
+    setAgentStatus(false);
+  }
+
+  // ---- Summary + PDF ----
+  function generateLocalSummary() {
+    if (!transcriptLines.length) {
+      summaryBox.textContent = "No transcript captured. Try speaking during the interview.";
+      return;
+    }
+
+    const totalLines = transcriptLines.length;
+    const youLines = transcriptLines.filter((l) => l.speaker === "You").length;
+    const aiLines = totalLines - youLines;
+
+    const firstFew = transcriptLines.slice(0, 3).map((l) => `${l.speaker}: ${l.text}`).join("\n");
+    const lastFew = transcriptLines.slice(-3).map((l) => `${l.speaker}: ${l.text}`).join("\n");
+
+    const summary = [
+      "Quick local summary (approximate):",
+      "",
+      `• Total turns: ${totalLines}`,
+      `• You spoke: ${youLines} times`,
+      `• Agent spoke: ${aiLines} times (approx)`,
+      "",
+      "Opening moments:",
+      firstFew || "(no data)",
+      "",
+      "Closing moments:",
+      lastFew || "(no data)",
+    ].join("\n");
+
+    summaryBox.textContent = summary;
+  }
+
+  function downloadPdf() {
+    const lines = transcriptLines.map((l) => `${l.speaker}: ${l.text}`).join("\n");
+    const summary = summaryBox.textContent || "";
+    const resume = resumeInput.value || "";
+
+    const content = [
+      "Exit Interview Snapshot",
+      "=======================",
+      "",
+      "Transcript:",
+      "-----------",
+      lines || "(no transcript)",
+      "",
+      "Summary:",
+      "--------",
+      summary || "(no summary)",
+      "",
+      "Resume / Context (not sent to agent):",
+      "-------------------------------------",
+      resume || "(empty)",
+    ].join("\n");
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "exit-interview-summary.txt"; // simple text "PDF-like" export
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---- Wire up buttons ----
+  startBtn.addEventListener("click", async () => {
+    startBtn.disabled = true;
+    startBtn.textContent = "Connecting...";
+    micDot.classList.remove("warn");
+
+    try {
+      recognition = setupSpeechRecognition();
+      if (recognition) {
+        try {
+          recognition.start();
+        } catch (_) {}
+      }
+
+      await connectRoom();
+      setConnectionStatus(true);
+      setAgentStatus(true);
+      setMicStatus(!!recognition);
+
+      startFakeMetrics();
+
+      endBtn.disabled = false;
+      muteBtn.disabled = false;
+      downloadPdfBtn.disabled = true;
+      startBtn.textContent = "Interview running";
+    } catch (e) {
+      console.error(e);
+      startBtn.disabled = false;
+      startBtn.textContent = "Start interview";
+      micDot.classList.add("warn");
+      micStatus.textContent = "Failed to start (token/backend needed).";
+    }
+  });
+
+  endBtn.addEventListener("click", () => {
+    endBtn.disabled = true;
+    muteBtn.disabled = true;
+    startBtn.disabled = false;
+    startBtn.textContent = "Start interview";
+
+    if (recognition) {
+      try {
+        recognition.onend = null;
+        recognition.stop();
+      } catch (_) {}
+      recognizing = false;
+      setMicStatus(false);
+    }
+
+    disconnectRoom();
+    stopFakeMetrics();
+    generateLocalSummary();
+    downloadPdfBtn.disabled = false;
+  });
+
+  muteBtn.addEventListener("click", () => {
+    if (!localTrackPub) return;
+    isMuted = !isMuted;
+    localTrackPub.track.muted = isMuted;
+    muteBtn.textContent = isMuted ? "🔊 Unmute mic" : "🔇 Mute mic";
+    micStatus.textContent = isMuted ? "Mic muted" : "Mic listening (browser STT)";
+  });
+
+  downloadPdfBtn.addEventListener("click", () => {
+    downloadPdf();
+  });
+</script>
+</body>
+</html>
