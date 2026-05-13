@@ -13,10 +13,10 @@
     }
     .app {
       padding: 20px;
-      max-width: 1200px;
+      max-width: 1300px;
       margin: auto;
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 2fr 2fr 1.2fr;
       gap: 20px;
     }
     .card {
@@ -25,10 +25,11 @@
       border-radius: 12px;
       padding: 16px;
     }
-    video {
+    video, canvas {
       width: 100%;
       border-radius: 12px;
       background: black;
+      display: block;
     }
     button {
       padding: 8px 14px;
@@ -64,32 +65,74 @@
       overflow-y: auto;
       white-space: pre-wrap;
     }
+    .avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 30%, #4f46e5, #111827);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .metric-label {
+      font-size: 13px;
+      color: #9ca3af;
+    }
+    .metric-value {
+      font-size: 18px;
+      font-weight: 600;
+    }
   </style>
+  <!-- face-api.js for basic emotion detection -->
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
 
 <div class="app">
 
+  <!-- LEFT: Video + metrics -->
   <div class="card">
     <h2>Exit Interview Agent</h2>
     <p>Room: <b>interview-room</b></p>
 
     <video id="localVideo" autoplay playsinline muted></video>
+    <canvas id="overlayCanvas"></canvas>
 
     <button id="startBtn" class="primary">Start interview</button>
     <button id="endBtn" class="danger" disabled>End interview</button>
     <button id="muteBtn" disabled>Mute mic</button>
-    <button id="downloadPdfBtn" disabled>Download Summary</button>
+    <button id="downloadPdfBtn" disabled>Download PDF Summary</button>
 
     <p id="status">Status: Disconnected</p>
 
-    <!-- ⭐ NEW METRICS -->
-    <p>Face engagement: <span id="faceEngagement">0%</span></p>
-    <p>Lighting: <span id="lightingScore">0%</span></p>
-    <p>Engagement signal: <span id="engagementSignal">0.00</span></p>
-    <p>Lighting balance: <span id="lightingBalance">0.00</span></p>
+    <div style="margin-top: 10px;">
+      <div>
+        <div class="metric-label">Dominant emotion</div>
+        <div class="metric-value" id="emotionLabel">N/A</div>
+      </div>
+      <div style="margin-top: 6px;">
+        <div class="metric-label">Face engagement</div>
+        <div class="metric-value"><span id="faceEngagement">0</span>%</div>
+      </div>
+      <div style="margin-top: 6px;">
+        <div class="metric-label">Lighting</div>
+        <div class="metric-value"><span id="lightingScore">0</span>%</div>
+      </div>
+      <div style="margin-top: 6px;">
+        <div class="metric-label">Engagement signal</div>
+        <div class="metric-value" id="engagementSignal">0.00</div>
+      </div>
+      <div style="margin-top: 6px;">
+        <div class="metric-label">Lighting balance</div>
+        <div class="metric-value" id="lightingBalance">0.00</div>
+      </div>
+    </div>
   </div>
 
+  <!-- MIDDLE: Transcript + summary -->
   <div class="card">
     <h3>Live Transcript</h3>
     <div id="transcriptBox" class="transcript-box"></div>
@@ -101,6 +144,25 @@
     <textarea id="summaryBox" readonly>End the interview to generate summary.</textarea>
   </div>
 
+  <!-- RIGHT: Agent avatar + candidate context -->
+  <div class="card">
+    <div class="avatar">AI</div>
+    <h3>Agent</h3>
+    <p style="font-size: 14px; color: #9ca3af;">
+      This agent conducts exit interviews, tracks engagement, and summarizes key themes.
+    </p>
+
+    <h4>Candidate resume upload</h4>
+    <input type="file" id="resumeFile" accept=".pdf,.doc,.docx,.txt" />
+    <small style="color:#9ca3af;">(Optional, for your own notes only)</small>
+
+    <h4 style="margin-top: 12px;">LinkedIn / profile URL</h4>
+    <input type="url" id="linkedinUrl" placeholder="https://www.linkedin.com/in/..." />
+
+    <h4 style="margin-top: 12px;">Internal notes</h4>
+    <textarea id="notesBox" rows="6" placeholder="Paste resume text, LinkedIn summary, or notes here..."></textarea>
+  </div>
+
 </div>
 
 <script type="module">
@@ -108,7 +170,6 @@
   // CONFIG
   // -----------------------------
   const LIVEKIT_URL = "wss://exit-interview-agent-1lo01a7d.livekit.cloud";
-  const LIVEKIT_API_KEY = "APIfyhwkLhJHKjX";
   const ROOM_NAME = "interview-room";
   const AGENT_ID = "ab_3j6898gfhdj";
 
@@ -121,22 +182,28 @@
   const downloadPdfBtn = document.getElementById("downloadPdfBtn");
 
   const localVideo = document.getElementById("localVideo");
+  const overlayCanvas = document.getElementById("overlayCanvas");
   const transcriptBox = document.getElementById("transcriptBox");
   const lastUtteranceInput = document.getElementById("lastUtterance");
   const summaryBox = document.getElementById("summaryBox");
   const statusEl = document.getElementById("status");
 
-  // NEW METRIC DOM
   const faceEngagementEl = document.getElementById("faceEngagement");
   const lightingScoreEl = document.getElementById("lightingScore");
   const engagementSignalEl = document.getElementById("engagementSignal");
   const lightingBalanceEl = document.getElementById("lightingBalance");
+  const emotionLabelEl = document.getElementById("emotionLabel");
+
+  const resumeFileInput = document.getElementById("resumeFile");
+  const linkedinUrlInput = document.getElementById("linkedinUrl");
+  const notesBox = document.getElementById("notesBox");
 
   let room = null;
   let localTrackPub = null;
   let recognition = null;
   let transcriptLines = [];
   let isMuted = false;
+  let faceModelsLoaded = false;
 
   // -----------------------------
   // CAMERA AUTO-START
@@ -145,8 +212,16 @@
     .then(stream => {
       localVideo.srcObject = stream;
       localVideo.play();
+      setupOverlayCanvas();
+      loadFaceModels();
+      startVideoAnalysisLoop();
     })
     .catch(err => console.error("Camera error:", err));
+
+  function setupOverlayCanvas() {
+    overlayCanvas.width = localVideo.clientWidth;
+    overlayCanvas.height = localVideo.clientHeight;
+  }
 
   // -----------------------------
   // TOKEN (manual)
@@ -177,21 +252,92 @@
   }
 
   // -----------------------------
-  // FAKE METRICS (emotions, lighting, engagement)
+  // FACE / EMOTION / LIGHTING ANALYSIS
   // -----------------------------
-  function updateFakeMetrics() {
-    const face = Math.floor(40 + Math.random() * 60);
-    const light = Math.floor(30 + Math.random() * 70);
-    const engage = (0.4 + Math.random() * 0.6).toFixed(2);
-    const balance = (0.3 + Math.random() * 0.7).toFixed(2);
-
-    faceEngagementEl.textContent = face + "%";
-    lightingScoreEl.textContent = light + "%";
-    engagementSignalEl.textContent = engage;
-    lightingBalanceEl.textContent = balance;
+  async function loadFaceModels() {
+    try {
+      const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+      faceModelsLoaded = true;
+    } catch (e) {
+      console.error("Error loading face-api models:", e);
+    }
   }
 
-  setInterval(updateFakeMetrics, 2000);
+  function estimateLightingFromFrame(video) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = 160;
+    canvas.height = 120;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let total = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      total += (r + g + b) / 3;
+    }
+    const avg = total / (data.length / 4);
+    return Math.min(100, Math.max(0, (avg / 255) * 100));
+  }
+
+  async function analyzeVideoFrame() {
+    if (!localVideo || localVideo.readyState < 2) return;
+
+    const ctx = overlayCanvas.getContext("2d");
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+    let faceScore = 0;
+    let dominantEmotion = "N/A";
+
+    if (faceModelsLoaded) {
+      const detections = await faceapi
+        .detectAllFaces(localVideo, new faceapi.TinyFaceDetectorOptions())
+        .withFaceExpressions();
+
+      if (detections && detections.length > 0) {
+        const resized = faceapi.resizeResults(detections, {
+          width: overlayCanvas.width,
+          height: overlayCanvas.height
+        });
+
+        resized.forEach(det => {
+          const box = det.detection.box;
+          ctx.strokeStyle = "#4f46e5";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+          const expr = det.expressions;
+          let maxVal = 0;
+          let maxKey = "neutral";
+          for (const k in expr) {
+            if (expr[k] > maxVal) {
+              maxVal = expr[k];
+              maxKey = k;
+            }
+          }
+          dominantEmotion = maxKey;
+          faceScore = Math.round(maxVal * 100);
+        });
+      }
+    }
+
+    const lighting = estimateLightingFromFrame(localVideo);
+    const engagementSignal = (faceScore / 100 * 0.6 + lighting / 100 * 0.4).toFixed(2);
+    const lightingBalance = (lighting / 100).toFixed(2);
+
+    emotionLabelEl.textContent = dominantEmotion;
+    faceEngagementEl.textContent = faceScore;
+    lightingScoreEl.textContent = Math.round(lighting);
+    engagementSignalEl.textContent = engagementSignal;
+    lightingBalanceEl.textContent = lightingBalance;
+  }
+
+  function startVideoAnalysisLoop() {
+    setInterval(analyzeVideoFrame, 1500);
+  }
 
   // -----------------------------
   // SPEECH RECOGNITION
@@ -282,7 +428,7 @@
   }
 
   // -----------------------------
-  // SUMMARY
+  // SUMMARY + PDF EXPORT
   // -----------------------------
   function generateSummary() {
     if (!transcriptLines.length) {
@@ -294,26 +440,37 @@
     const you = transcriptLines.filter(l => l.speaker === "You").length;
     const ai = total - you;
 
+    const metricsText =
+      `Emotion: ${emotionLabelEl.textContent}\n` +
+      `Face engagement: ${faceEngagementEl.textContent}%\n` +
+      `Lighting: ${lightingScoreEl.textContent}%\n` +
+      `Engagement signal: ${engagementSignalEl.textContent}\n` +
+      `Lighting balance: ${lightingBalanceEl.textContent}\n`;
+
+    const notesText =
+      `LinkedIn: ${linkedinUrlInput.value || "N/A"}\n` +
+      `Notes: ${notesBox.value || "N/A"}\n`;
+
     summaryBox.value =
       `Summary:\n\n` +
       `Total lines: ${total}\n` +
       `You: ${you}\n` +
       `Agent: ${ai}\n\n` +
-      `First lines:\n` +
-      transcriptLines.slice(0, 3).map(l => `${l.speaker}: ${l.text}`).join("\n") +
-      `\n\nLast lines:\n` +
-      transcriptLines.slice(-3).map(l => `${l.speaker}: ${l.text}`).join("\n");
+      `Metrics:\n${metricsText}\n` +
+      `Candidate context:\n${notesText}\n` +
+      `Transcript (first lines):\n` +
+      transcriptLines.slice(0, 5).map(l => `${l.speaker}: ${l.text}`).join("\n") +
+      `\n\nTranscript (last lines):\n` +
+      transcriptLines.slice(-5).map(l => `${l.speaker}: ${l.text}`).join("\n");
   }
 
-  function downloadSummary() {
-    const content = summaryBox.value;
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "summary.txt";
-    a.click();
-    URL.revokeObjectURL(url);
+  function downloadPdfSummary() {
+    const text = summaryBox.value || "No summary.";
+    const win = window.open("", "_blank");
+    win.document.write("<pre>" + text.replace(/</g, "&lt;") + "</pre>");
+    win.document.close();
+    win.focus();
+    win.print();
   }
 
   // -----------------------------
@@ -347,7 +504,7 @@
     muteBtn.textContent = isMuted ? "Unmute mic" : "Mute mic";
   };
 
-  downloadPdfBtn.onclick = downloadSummary;
+  downloadPdfBtn.onclick = downloadPdfSummary;
 </script>
 
 </body>
