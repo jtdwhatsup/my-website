@@ -140,7 +140,28 @@
   // TOKEN (manual)
   // -----------------------------
   async function fetchToken(identity) {
-    return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg3Nzc5NTYsImlkZW50aXR5IjoiU3R1ZGVudCIsImlzcyI6IkFQSWZ5aHdrTGhKSEtqWCIsIm5iZiI6MTc3ODY5MTU1Niwic3ViIjoiU3R1ZGVudCIsInZpZGVvIjp7ImNhblB1Ymxpc2giOnRydWUsImNhblB1Ymxpc2hEYXRhIjp0cnVlLCJjYW5TdWJzY3JpYmUiOnRydWUsInJvb20iOiJpbnRlcnZpZXctcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.Ksoa3T3cz3MeGGNvz7xVVuRPN8Tc-gpX76sG6yQn3Uo";
+    return "PASTE_YOUR_TOKEN_HERE";
+  }
+
+  // -----------------------------
+  // SEND TO AGENT
+  // -----------------------------
+  async function sendToAgent(text) {
+    try {
+      await fetch(`https://exit-interview-agent-1lo01a7d.livekit.cloud/agents/${AGENT_ID}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${await fetchToken("Student")}`
+        },
+        body: JSON.stringify({
+          type: "message",
+          text
+        })
+      });
+    } catch (err) {
+      console.error("Agent send error:", err);
+    }
   }
 
   // -----------------------------
@@ -169,6 +190,7 @@
       if (finalText) {
         lastUtteranceInput.value = finalText;
         appendTranscript("You", finalText);
+        sendToAgent(finalText);
       }
     };
 
